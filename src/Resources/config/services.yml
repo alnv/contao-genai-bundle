@@ -1,0 +1,6 @@
+services:
+  _defaults:
+    autowire: true
+    autoconfigure: true
+  Alnv\GenaiBundle\Controller\ChatComponentController:
+    public: true

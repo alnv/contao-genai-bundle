@@ -1,0 +1,138 @@
+<div id="<?= $this->templateId ?>" class="ce_chat_component block" style="opacity: 0" ref="chat-component">
+    <div class="chat_container">
+
+        <div class="chat-content">
+            <div class="chat-headline">
+                <h2>Landkreis Potsdam-Mittelmark KI-Assistent</h2>
+            </div>
+
+            <div class="chat-description">
+                <p>Willkommen im Landkreis Potsdam-Mittelmark! Ich stehe Ihnen als virtueller KI-Assistent gerne zur Seite.</p>
+            </div>
+        </div>
+
+        <div class="chat-messages">
+
+            <div :class="'chat-message ' + message.role" v-for="message in messages">
+                <div class="chat-name">{{ message.name }}</div>
+                <div class="chat-content" v-html="message.content"></div>
+            </div>
+
+            <div v-if="running" class="loading">
+                <p>👀 Einen kleinen Moment bitte, ich bin gerade dabei, Ihre Frage zu beantworten. Die Suche läuft bereits. <img src="/system/themes/flexible/icons/loading.svg" alt="loading"></p>
+            </div>
+
+        </div>
+
+        <div class="chat-input-component">
+            <label for="user-input"></label>
+            <textarea id="user-input" type="text" placeholder="Stellen Sie Ihre Frage …" autocomplete="off" autofocus="autofocus" v-on:keyup.enter="ask" v-model="question"></textarea>
+
+            <div class="controls">
+                <button class="user-input-reset-button" @click="reset">🗑 Chat löschen</button>
+                <button class="user-input-send-button" @click="ask"><svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.3398 12.5156L25.4258 17.7656C26.3008 18.1484 26.3008 19.3789 25.4258 19.7617L13.3398 25.0117C12.4102 25.4219 11.4531 24.3828 11.9453 23.4805L13.8594 19.9531C13.9688 19.7344 14.1875 19.5703 14.4609 19.543L19.2734 18.9414C19.3555 18.9414 19.4375 18.8594 19.4375 18.75C19.4375 18.668 19.3555 18.5859 19.2734 18.5859L14.4609 17.9844C14.1875 17.9297 13.9688 17.793 13.8594 17.5742L11.9453 14.0469C11.4531 13.1445 12.4102 12.1055 13.3398 12.5156Z" fill="white"></path></svg></button>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script>
+    (function () {
+        new Vue({
+            el: '#<?= $this->templateId ?>',
+            data: function () {
+                return {
+                    running: false,
+                    question: '',
+                    messages: [
+                        {
+                            name: '<?= $this->assistant['assistantName'] ?? '' ?>',
+                            role: '<?= $this->chatRoleAssistant ?>',
+                            content: 'Willkommen im Landkreis Potsdam-Mittelmark'
+                        }
+                    ]
+                }
+            },
+            methods: {
+                askRequest: function () {
+                    this.running = true;
+
+                    this.$http.post('gen-ai/chat-component/ask/<?= $this->assistantId ?>',
+                        {
+                            question: this.question
+                        },
+                        {
+                            emulateJSON: true,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    ).then(function (res) {
+
+                        if (res.body.content) {
+                            this.addMessage(res.body.content, res.body.name, res.body.role);
+                        } else {
+                            //
+                        }
+
+                        this.running = false;
+
+                    }.bind(this));
+                },
+                fetchRequest: function () {
+
+                    this.$http.post('gen-ai/chat-component/conversation/<?= $this->assistantId ?>',
+                        {},
+                        {
+                            emulateJSON: true,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    ).then(function (res) {
+
+                        for (let i = 0; i < res.body.length; i++) {
+                            this.addMessage(res.body[i]['content'], res.body[i]['name'], res.body[i]['role'])
+                        }
+
+                    }.bind(this));
+                },
+                reset: function () {
+
+                    this.messages = [this.messages[0]];
+
+                    this.$http.post('gen-ai/chat-component/conversation/<?= $this->assistantId ?>/reset',
+                        {},
+                        {
+                            emulateJSON: true,
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        }
+                    ).then(function (res) {
+                        //
+                    }.bind(this));
+                },
+                ask: function () {
+
+                    if (!this.question) {
+                        return;
+                    }
+
+                    this.askRequest();
+
+                    this.addMessage(this.question, 'Gast', '<?= $this->chatRoleUser ?>');
+
+                    this.question = '';
+                },
+                addMessage: function (content, name, role) {
+
+                    this.messages.push({
+                        name: name,
+                        role: role,
+                        content: content
+                    })
+                }
+            },
+            mounted: function () {
+                this.$refs['chat-component'].style.opacity = 1;
+                this.fetchRequest();
+            }
+        })
+    })();
+</script>

@@ -1,0 +1,3 @@
+genaicontroller:
+  resource: "@AlnvGenaiBundle/Controller"
+  type: attribute
