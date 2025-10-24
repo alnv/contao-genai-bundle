@@ -6,6 +6,8 @@ use Alnv\GenaiBundle\Entities\Chat;
 use Alnv\GenaiBundle\Entities\Conversation;
 use Alnv\GenaiBundle\Helpers\Toolkit;
 use Alnv\GenaiBundle\Vectors\ChromaDb;
+use Contao\Config;
+use Contao\StringUtil;
 use LLPhant\Chat\Enums\ChatRole;
 use LLPhant\Chat\Message;
 use LLPhant\Chat\OllamaChat;
@@ -82,7 +84,7 @@ class Ollama // todo add
     {
 
         $strContext = $this->getContextRequest($strQuestion);
-        $arrContext = $this->getContext($strContext . ' ' . $strQuestion);
+        $arrContext = $this->getContext($strContext);
 
         $strDocuments = '';
         $strMeta = '';
@@ -95,14 +97,16 @@ class Ollama // todo add
             $strMeta .= $arrMetadatas['URL'] ?? '';
         }
 
+        $strDocuments = StringUtil::substr($strDocuments, 3000);
+
         $objMessage = new Message();
         $objMessage->content =
             "Kontext:
             $strDocuments
-            Quellen-URLs:
+            URLs:
             $strMeta
             Anweisung:
-            Beantworte die folgende Frage ausschließlich basierend auf dem oben angegebenen Kontext.  Wenn im Kontext keine ausreichenden Informationen zur Beantwortung der Frage vorhanden sind, dann antworte bitte nur mit folgendem Satz (und nichts weiter): „Ich kann Ihre Frage nicht beantworten, da mir keine Informationen darüber bekannt sind.“";
+            Beantworte die folgende Frage ausschließlich basierend auf dem oben angegebenen Kontext. Wenn im Kontext keine ausreichenden Informationen zur Beantwortung der Frage vorhanden sind, dann antworte bitte **nur** mit folgendem Satz: „Ich kann Ihre Frage nicht beantworten, da mir keine Informationen darüber bekannt sind.“";
 
         $objMessage->role = ChatRole::System;
 
@@ -130,34 +134,15 @@ class Ollama // todo add
 
         $arrMessages = [];
 
-        // $this->addInstructionMessage($arrMessages);
-
-        /*
-        $arrTopics = [];
-        $objEntities = Database::getInstance()->prepare('SELECT * FROM cm_pst WHERE tstamp>? AND visible=?')->execute(0, '1');
-        while ($objEntities->next()) {
-            $arrTopics[] = $objEntities->name;
-        }
-
-        $strTopics = \implode("\n", $arrTopics);
-        $strPrompt = "Aufgabe:\n" .
-            "1. Ordne die Frage einem der folgenden Themengebiete zu:\n" .
-            $strTopics . "\n" .
-            "2. Entferne anschließend alle unnötigen Tokens (z.B. Füllwörter, irrelevante Begriffe oder natürliche Sprache), " .
-            "um die Frage für eine semantische Suche mit ChromaDB (RAG) zu optimieren. " .
-            "Konzentriere dich auf bedeutungstragende Schlüsselwörter.\n" .
-            "Frage:\n" . $strQuestion;
-        */
-
         $strPrompt = "
-            Du bist ein NLP-Experte. Optimiere die folgende Benutzereingabe für eine semantische Vektor-Datenbanksuche. 
+            Du bist ein NLP-Experte (Natürliche Sprachverarbeitung). Optimiere die folgende Benutzereingabe für eine semantische Vektor-Datenbanksuche. 
             Ziel ist es, die Anfrage so umzuschreiben oder zu erweitern, dass:
             - Der semantische Gehalt vollständig erhalten bleibt  
             - Die Formulierung möglichst klar, vollständig und präzise ist  
             - Relevante Synonyme oder verwandte Begriffe (wenn sinnvoll) ergänzt werden  
             - Ambiguitäten (Mehrdeutigkeiten) vermieden oder aufgelöst werden  
             - Kontext- und themenbezogene Schlüsselbegriffe explizit gemacht werden
-            
+            - Verwende keine Platzhalter
             Gib nur die optimierte, suchfreundliche Formulierung zurück – kein Kommentar, keine Erklärungen.
             
             Originalfrage: \"$strQuestion\"
@@ -177,7 +162,8 @@ class Ollama // todo add
     {
 
         $objChroma = new ChromaDb();
+        $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
 
-        return $objChroma->get($strContext); // todo
+        return $objChroma->get($strContext);
     }
 }

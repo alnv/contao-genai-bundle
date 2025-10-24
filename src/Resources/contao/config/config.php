@@ -1,7 +1,14 @@
 <?php
 
 use Contao\ArrayUtil;
-// (new Alnv\GenaiBundle\Vectors\ChromaDb())->addData();
+
+# use Alnv\GenaiBundle\Vectors\ChromaDb;
+# use Contao\Config;
+// $objChroma = new ChromaDb();
+// $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
+// $objChroma->deleteAll();
+// $objChroma->sync();
+// dd($objChroma->count());
 
 ArrayUtil::arrayInsert($GLOBALS['BE_MOD'], 3, [
     'genai-modules' => [
@@ -15,6 +22,13 @@ ArrayUtil::arrayInsert($GLOBALS['BE_MOD'], 3, [
             'name' => 'assistants',
             'tables' => [
                 'tl_genai_assistants'
+            ]
+        ],
+        'genai-documents' => [
+            'name' => 'documents',
+            'tables' => [
+                'tl_genai_documents_collections',
+                'tl_genai_documents'
             ]
         ]
     ]

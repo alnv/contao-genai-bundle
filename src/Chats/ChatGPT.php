@@ -6,6 +6,7 @@ use Alnv\GenaiBundle\Entities\Chat;
 use Alnv\GenaiBundle\Entities\Conversation;
 use Alnv\GenaiBundle\Helpers\Toolkit;
 use Alnv\GenaiBundle\Vectors\ChromaDb;
+use Contao\Config;
 use LLPhant\Chat\Enums\ChatRole;
 use LLPhant\Chat\Message;
 use LLPhant\Chat\OpenAIChat;
@@ -138,7 +139,7 @@ class ChatGPT // todo add
             - Relevante Synonyme oder verwandte Begriffe (wenn sinnvoll) ergänzt werden  
             - Ambiguitäten (Mehrdeutigkeiten) vermieden oder aufgelöst werden  
             - Kontext- und themenbezogene Schlüsselbegriffe explizit gemacht werden
-            
+            - Verwende keine Platzhalter
             Gib nur die optimierte, suchfreundliche Formulierung zurück – kein Kommentar, keine Erklärungen.
             
             Originalfrage: \"$strQuestion\"
@@ -158,7 +159,8 @@ class ChatGPT // todo add
     {
 
         $objChroma = new ChromaDb();
+        $objChroma->setOpenAIEmbedding(Config::get('genAIChromaDBOpenAiToken'), Config::get('genAIChromaDBOpenAiOrganisation'), Config::get('genAIChromaDBOpenAiModel'));
 
-        return $objChroma->get($strContext); // todo
+        return $objChroma->get($strContext);
     }
 }
