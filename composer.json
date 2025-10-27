@@ -24,7 +24,8 @@
     "ext-curl": "*",
     "contao/core-bundle": "~4.13 || ~5.0",
     "theodo-group/llphant": "^0.11",
-    "michelf/php-markdown": "^2.0"
+    "michelf/php-markdown": "^2.0",
+    "menatwork/contao-multicolumnwizard-bundle": "^3.6"
   },
   "config": {
     "preferred-install": "dist"

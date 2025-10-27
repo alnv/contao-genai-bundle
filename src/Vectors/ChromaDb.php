@@ -60,7 +60,7 @@ class ChromaDb
 
         $objResults = $objCollection->query(
             queryTexts: [$strQuestion],
-            nResults: 10,
+            nResults: 5,
             include: ['documents', 'metadatas', 'distances'],
         );
 
@@ -73,6 +73,10 @@ class ChromaDb
         while ($objDocuments->next()) {
 
             $arrContents = StringUtil::deserialize($objDocuments->content, true);
+
+            if ($objDocuments->language || \strtolower($objDocuments->language) != 'de') { // todo
+                continue;
+            }
 
             foreach ($arrContents as $arrContent) {
 
