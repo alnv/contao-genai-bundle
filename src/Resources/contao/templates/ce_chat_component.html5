@@ -1,15 +1,17 @@
 <div id="<?= $this->templateId ?>" class="ce_chat_component block" style="opacity: 0" ref="chat-component">
     <div class="chat_container">
 
+        <?php if ($this->content['headline'] || $this->content['text']): ?>
         <div class="chat-content">
             <div class="chat-headline">
-                <h2>Landkreis Potsdam-Mittelmark KI-Assistent</h2>
+                <h2><?= $this->content['headline'] ?></h2>
             </div>
 
             <div class="chat-description">
-                <p>Willkommen im Landkreis Potsdam-Mittelmark! Ich stehe Ihnen als virtueller KI-Assistent gerne zur Seite.</p>
+                <p><?= $this->content['text'] ?></p>
             </div>
         </div>
+        <?php endif; ?>
 
         <div class="chat-messages">
 

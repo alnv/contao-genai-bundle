@@ -31,7 +31,11 @@ class ChatComponent
             'assistantId' => $this->objAssistant->getAssistantId(),
             'assistant' => $this->objAssistant->getAssistantArray(),
             'chatRoleAssistant' => ChatRole::Assistant?->value,
-            'chatRoleUser' => ChatRole::User?->value
+            'chatRoleUser' => ChatRole::User?->value,
+            'content' => [
+                'headline' => $this->arrOptions['headline'] ?? '',
+                'text' => $this->arrOptions['text'] ?? ''
+            ]
         ]);
 
         return $objTemplate->parse();
