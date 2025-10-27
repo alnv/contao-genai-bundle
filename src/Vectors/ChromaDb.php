@@ -33,7 +33,7 @@ class ChromaDb
         $this->strCollectionName = Config::get('genAIChromaDBCollectionName') ?: '';
 
         $this->objChromaDB = ChromaDBClient::factory()
-            ->withHost( $this->strUrl)
+            ->withHost($this->strUrl)
             ->withPort($this->intPort)
             ->connect();
     }
@@ -113,6 +113,10 @@ class ChromaDb
 
         $this->parse($objDocuments, $arrData);
 
+        if (empty($arrData['ids'])) {
+            return;
+        }
+
         $objCollection = $this->objChromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
 
         $objCollection->update($arrData['ids'], null, $arrData['metadatas'], $arrData['documents']);
@@ -136,6 +140,10 @@ class ChromaDb
         }
 
         $this->parse($objDocuments, $arrData);
+
+        if (empty($arrData['ids'])) {
+            return;
+        }
 
         $objCollection = $this->objChromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
 

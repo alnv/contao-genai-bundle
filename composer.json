@@ -25,12 +25,19 @@
     "contao/core-bundle": "~4.13 || ~5.0",
     "theodo-group/llphant": "^0.11",
     "michelf/php-markdown": "^2.0",
-    "menatwork/contao-multicolumnwizard-bundle": "^3.6"
+    "menatwork/contao-multicolumnwizard-bundle": "^3.6",
+    "codewithkyrian/chromadb-php": "@dev"
   },
   "config": {
     "preferred-install": "dist"
   },
   "extra": {
     "contao-manager-plugin": "Alnv\\GenaiBundle\\ContaoManager\\Plugin"
+  },
+  "repositories": {
+    "codewithkyrian/chromadb-php": {
+      "type": "vcs",
+      "url": "https://github.com/CodeWithKyrian/chromadb-php"
+    }
   }
 }
