@@ -74,10 +74,6 @@ class ChromaDb
 
             $arrContents = StringUtil::deserialize($objDocuments->content, true);
 
-            if ($objDocuments->language || \strtolower($objDocuments->language) != 'de') { // todo
-                continue;
-            }
-
             foreach ($arrContents as $arrContent) {
 
                 if (!($arrContent['chunkNumber'] ?? '') || !($arrContent['formattedContent'] ?? '')) {
@@ -105,7 +101,7 @@ class ChromaDb
             'metadatas' => []
         ];
 
-        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at>0 AND tstamp>0 ORDER BY title')->limit(25)->execute();
+        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at>0 AND tstamp>0 AND `language`=? ORDER BY title')->limit(25)->execute('de');
 
         if (!$objDocuments->numRows) {
             return;
@@ -133,7 +129,7 @@ class ChromaDb
             'metadatas' => []
         ];
 
-        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at=0 AND tstamp>0 ORDER BY title')->limit(25)->execute();
+        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at=0 AND tstamp>0 AND `language`=? ORDER BY title')->limit(25)->execute('de');
 
         if (!$objDocuments->numRows) {
             return;
@@ -158,6 +154,7 @@ class ChromaDb
         $objDocuments->reset();
 
         while ($objDocuments->next()) {
+
             Database::getInstance()->prepare('UPDATE tl_genai_documents %s WHERE id=?')->set(['tstamp' => \time(), 'synced_at' => \time()])->limit(1)->execute($objDocuments->id);
         }
     }
