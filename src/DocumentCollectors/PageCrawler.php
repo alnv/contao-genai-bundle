@@ -52,7 +52,7 @@ class PageCrawler
             'updated_at' => \time(),
             'pid' => 1, // todo
             'title' => $arrMeta['title'] ?? '',
-            'description' => '',
+            // 'description' => '',
             'content' => \serialize($arrContent),
             'pageId' => $arrMeta['pageId'] ?? '',
             'url' => $strUrl,

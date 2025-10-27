@@ -42,7 +42,7 @@ class SiteIndexer implements IndexerInterface
         try {
             $strLanguage = $document->getContentCrawler()->filterXPath('//html[@lang]')->first()->attr('lang');
         } catch (\Exception $e) {
-            $strLanguage = 'en';
+            $strLanguage = 'de';
         }
 
         $arrMeta = [
@@ -51,6 +51,8 @@ class SiteIndexer implements IndexerInterface
             'protected' => false,
             'groups' => []
         ];
+
+        $this->extendMetaFromJsonLdScripts($document, $arrMeta);
 
         if (!isset($arrMeta['pageId']) || 0 === $arrMeta['pageId']) {
             $this->throwBecause('No page ID could be determined.');
@@ -94,5 +96,21 @@ class SiteIndexer implements IndexerInterface
         }
 
         throw new IndexerException($message);
+    }
+
+    private function extendMetaFromJsonLdScripts(Document $document, array &$meta): void
+    {
+
+        $jsonLds = $document->extractJsonLdScripts('https://schema.contao.org/', 'Page');
+
+        if (0 === \count($jsonLds)) {
+            $jsonLds = $document->extractJsonLdScripts('https://schema.contao.org/', 'RegularPage');
+
+            if (0 === \count($jsonLds)) {
+                $this->throwBecause('No JSON-LD found.');
+            }
+        }
+
+        $meta = array_merge($meta, array_merge(...$jsonLds));
     }
 }

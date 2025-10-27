@@ -2,10 +2,12 @@ services:
   _defaults:
     autowire: true
     autoconfigure: true
+
   Alnv\GenaiBundle\EventListener\SiteIndexer:
     arguments:
       - '@contao.framework'
     tags:
       - { name: 'contao.search_indexer' }
+
   Alnv\GenaiBundle\Controller\ChatComponentController:
     public: true
