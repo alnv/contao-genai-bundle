@@ -1,6 +1,7 @@
 <?php
 
 use Contao\DC_Table;
+use Contao\Config;
 
 $GLOBALS['TL_DCA']['tl_genai_documents'] = [
     'config' => [
@@ -21,7 +22,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             'panelLayout' => 'filter,limit;sort,search',
             'headerFields' => ['title'],
             'child_record_callback' => function ($arrRow) {
-                return ($arrRow['title'] ?? '-');
+                return ($arrRow['title'] ?? '-') . ($arrRow['synced_at'] ? ' - ' . \date(Config::get('datimFormat'), $arrRow['synced_at']) : '');
             }
         ],
         'label' => [],
