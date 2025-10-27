@@ -85,20 +85,22 @@ class PageCrawler
 
             $strHref = $objLink->getAttribute('href');
 
-            if (!$strHref || strpos($strHref, '.pdf') === false) {
+            if (!$strHref || !\str_contains($strHref, '.pdf')) {
                 continue;
             }
 
-            $arrUrl = \parse_url($strHref);
-            $strFile = $arrUrl['path'];
-            $objFile = FilesModel::findByPath($strFile);
+            $arrUrlFragments = \parse_url($strHref, PHP_URL_QUERY);
+            \parse_str($arrUrlFragments, $arrQueries);
 
+            $strFile = $arrQueries['file'] ?? ($arrUrlFragments['path'] ?? '');
+
+            $objFile = FilesModel::findByPath($strFile);
             if (!$objFile) {
                 continue;
             }
 
-            $strFilePath = $strRootDir . $objFile->path;
-            $objReader = new FileDataReader($strFilePath, Document::class);
+            $strFilePath = $strRootDir . '/' . $objFile->path;
+            $objReader = new FileDataReader($strFilePath);
             $arrDocuments = $objReader->getDocuments();
 
             $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 800);

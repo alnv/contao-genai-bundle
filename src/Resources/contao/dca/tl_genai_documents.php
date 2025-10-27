@@ -62,6 +62,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ],
         'tstamp' => [
+            'flag' => 6,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ],
         'title' => [
@@ -94,7 +95,8 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
                     ]
                 ]
             ],
-            'sql' => "blob NULL"
+            'search' => true,
+            'sql' => "LONGBLOB NULL"
         ],
         'url' => [
             'inputType' => 'text',
@@ -113,18 +115,22 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             'sql' => "varchar(12) NOT NULL default ''"
         ],
         'pageId' => [
+            'search' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ],
         'created_at' => [
             'flag' => 6,
+            'sorting' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ],
         'updated_at' => [
             'flag' => 6,
+            'sorting' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ],
         'synced_at' => [
             'flag' => 6,
+            'sorting' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ]
     ]
