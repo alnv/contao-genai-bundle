@@ -106,7 +106,7 @@ class Ollama // todo add
             URLs:
             $strMeta
             Anweisung:
-            Beantworte die folgende Frage ausschließlich basierend auf dem oben angegebenen Kontext. Wenn im Kontext keine ausreichenden Informationen zur Beantwortung der Frage vorhanden sind, dann antworte bitte **nur** mit folgendem Satz: „Ich kann Ihre Frage nicht beantworten, da mir keine Informationen darüber bekannt sind.“";
+            Beantworte die folgende Frage ausschließlich basierend auf dem oben angegebenen Kontext."; # Wenn im Kontext keine ausreichenden Informationen zur Beantwortung der Frage vorhanden sind, dann antworte bitte **nur** mit folgendem Satz: „Ich kann Ihre Frage nicht beantworten, da mir keine Informationen darüber bekannt sind.“
 
         $objMessage->role = ChatRole::System;
 
