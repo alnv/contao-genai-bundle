@@ -40,7 +40,7 @@ $GLOBALS['TL_DCA']['tl_genai_assistants'] = [
         ]
     ],
     'palettes' => [
-        'default' => 'name;assistantName,instructions;chat'
+        'default' => 'name;assistantName,assistantDialog,instructions;chat'
     ],
     'fields' => [
         'id' => [
@@ -68,6 +68,15 @@ $GLOBALS['TL_DCA']['tl_genai_assistants'] = [
             ],
             'search' => true,
             'sql' => ['type' => 'string', 'length' => 128, 'default' => '']
+        ],
+        'assistantDialog' => [
+            'inputType' => 'textarea',
+            'eval' => [
+                'mandatory' => false,
+                'tl_class' => 'clear'
+            ],
+            'search' => true,
+            'sql' => 'text NULL'
         ],
         'instructions' => [
             'inputType' => 'textarea',
