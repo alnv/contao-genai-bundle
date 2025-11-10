@@ -72,10 +72,10 @@ $GLOBALS['TL_DCA']['tl_genai_assistants'] = [
         'assistantDialog' => [
             'inputType' => 'textarea',
             'eval' => [
+                'decodeEntities' => true,
                 'mandatory' => false,
-                'tl_class' => 'clear'
+                'tl_class' => 'clr'
             ],
-            'search' => true,
             'sql' => 'text NULL'
         ],
         'instructions' => [
