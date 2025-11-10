@@ -51,7 +51,7 @@
                         {
                             name: '<?= $this->assistant['assistantName'] ?? '' ?>',
                             role: '<?= $this->chatRoleAssistant ?>',
-                            content: 'todo'
+                            content: ''
                         }
                     ]
                 }
