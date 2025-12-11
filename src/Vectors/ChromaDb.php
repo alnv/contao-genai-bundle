@@ -101,8 +101,7 @@ class ChromaDb
             'metadatas' => []
         ];
 
-        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at>0 AND tstamp>0 AND `language`=? ORDER BY title')->limit(25)->execute('de');
-
+        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at>0 AND tstamp>0 AND `language`=? ORDER BY title')->limit(10)->execute('de');
         if (!$objDocuments->numRows) {
             return;
         }
@@ -128,8 +127,7 @@ class ChromaDb
             'metadatas' => []
         ];
 
-        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at=0 AND tstamp>0 AND `language`=? ORDER BY title')->limit(25)->execute('de');
-
+        $objDocuments = Database::getInstance()->prepare('SELECT * FROM tl_genai_documents WHERE synced_at=0 AND tstamp>0 AND `language`=? ORDER BY title')->limit(10)->execute('de');
         if (!$objDocuments->numRows) {
             return;
         }
