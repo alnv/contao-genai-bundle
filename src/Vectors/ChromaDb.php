@@ -114,7 +114,6 @@ class ChromaDb
         }
 
         $objCollection = $this->objChromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
-
         $objCollection->update($arrData['ids'], null, $arrData['metadatas'], $arrData['documents']);
 
         $this->flag($objDocuments);
@@ -142,7 +141,6 @@ class ChromaDb
         }
 
         $objCollection = $this->objChromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
-
         $objCollection->add($arrData['ids'], null, $arrData['metadatas'], $arrData['documents']);
 
         $this->flag($objDocuments);
