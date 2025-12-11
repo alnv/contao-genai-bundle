@@ -25,7 +25,7 @@ class PageCrawler
         $strContent = $this->parseContent($strHtml);
 
         $arrDocuments = (new TextDataReader($strContent, ['sourceName' => $strTitle, 'id' => $arrMeta['pageId'] ?? '']))->getDocuments();
-        $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 800);
+        $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 600);
         $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
 
         $strUrl = $document->getUri()->__toString();
