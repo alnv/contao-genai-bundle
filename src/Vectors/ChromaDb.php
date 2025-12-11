@@ -60,7 +60,7 @@ class ChromaDb
 
         $objResults = $objCollection->query(
             queryTexts: [$strQuestion],
-            nResults: 5,
+            nResults: 10,
             include: ['documents', 'metadatas', 'distances'],
         );
 
