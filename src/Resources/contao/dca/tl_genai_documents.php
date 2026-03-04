@@ -6,6 +6,7 @@ use Contao\Config;
 $GLOBALS['TL_DCA']['tl_genai_documents'] = [
     'config' => [
         'dataContainer' => DC_Table::class,
+        'backendSearchIgnore' => true,
         'ptable' => 'tl_genai_documents_collections',
         'onload_callback' => [],
         'onsubmit_callback' => [],

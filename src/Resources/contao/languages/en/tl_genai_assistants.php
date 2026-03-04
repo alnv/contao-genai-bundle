@@ -1,5 +1,7 @@
 <?php
 
+$GLOBALS['TL_LANG']['tl_genai_assistants']['tableLabel'] = 'GEN-AI';
+
 $GLOBALS['TL_LANG']['tl_genai_assistants']['chat'] = ['Chat', ''];
 $GLOBALS['TL_LANG']['tl_genai_assistants']['instructions'] = ['Instruktion', ''];
 $GLOBALS['TL_LANG']['tl_genai_assistants']['name'] = ['Interne Bezeichnung', ''];

@@ -84,7 +84,6 @@ class PageCrawler
         foreach ($objLinks as $objLink) {
 
             $strHref = $objLink->getAttribute('href');
-
             if (!$strHref || !\str_contains($strHref, '.pdf')) {
                 continue;
             }

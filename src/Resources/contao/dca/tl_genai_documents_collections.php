@@ -6,6 +6,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents_collections'] = [
     'config' => [
         'dataContainer' => DC_Table::class,
         'enableVersioning' => true,
+        'backendSearchIgnore' => true,
         'ctable' => ['tl_genai_documents'],
         'onload_callback' => [],
         'onsubmit_callback' => [],

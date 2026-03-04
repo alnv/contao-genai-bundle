@@ -8,8 +8,11 @@ use Codewithkyrian\ChromaDB\Embeddings\EmbeddingFunction;
 use Codewithkyrian\ChromaDB\Embeddings\OllamaEmbeddingFunction;
 use Codewithkyrian\ChromaDB\Embeddings\OpenAIEmbeddingFunction;
 use Contao\Config;
+use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\Database;
 use Contao\StringUtil;
+use Contao\System;
+use Psr\Log\LogLevel;
 
 class ChromaDb
 {
@@ -138,8 +141,14 @@ class ChromaDb
             return;
         }
 
-        $objCollection = $this->objChromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
-        $objCollection->add($arrData['ids'], null, $arrData['metadatas'], $arrData['documents']);
+        try {
+            $objCollection = $this->objChromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
+            $objCollection->add($arrData['ids'], null, $arrData['metadatas'], $arrData['documents']);
+        } catch (\Exception $objError) {
+            System::getContainer()
+                ->get('monolog.logger.contao')
+                ->log(LogLevel::ERROR, 'Error by document with ID: ' . $objDocuments->id . ': ' . $objError->getMessage(), ['contao' => new ContaoContext(__CLASS__ . '::' . __FUNCTION__)]);
+        }
 
         $this->flag($objDocuments);
     }
