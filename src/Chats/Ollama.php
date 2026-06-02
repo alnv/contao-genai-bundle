@@ -7,33 +7,28 @@ use Alnv\GenaiBundle\Entities\Conversation;
 use Alnv\GenaiBundle\Helpers\Toolkit;
 use Alnv\GenaiBundle\Vectors\ChromaDb;
 use Contao\Config;
-use Contao\StringUtil;
 use LLPhant\Chat\Enums\ChatRole;
 use LLPhant\Chat\Message;
 use LLPhant\Chat\OllamaChat;
 use LLPhant\OllamaConfig;
 use Michelf\MarkdownExtra;
 
-class Ollama // todo add
+class Ollama
 {
-
     protected Chat $objChatEntity;
-
     protected OllamaConfig $objConfig;
-
     protected array $arrOptions = [];
-
     protected Conversation $objConversation;
 
-    public function __construct(Chat $objChatEntity, $arrOptions = [])
+    public function __construct(Chat $objChatEntity, array $arrOptions = [])
     {
-
         $this->objChatEntity = $objChatEntity;
         $this->arrOptions = $arrOptions;
 
         $arrChatEntity = $this->objChatEntity->getChatArray();
 
         $this->objConfig = new OllamaConfig();
+
         $this->objConfig->model = $arrChatEntity['model'] ?? '';
         $this->objConfig->url = $arrChatEntity['url'] ?? '';
 
@@ -41,82 +36,50 @@ class Ollama // todo add
         $this->objConversation->startIfNot($this->arrOptions['assistant']['id'] ?? 0);
     }
 
-    public function ask($strQuestion): array
+    public function ask(string $question): array
     {
+        $messages = [];
 
-        $arrMessages = [];
+        $this->addInstructionMessage($messages);
 
-        $this->addInstructionMessage($arrMessages);
-        $this->addContext($strQuestion, $arrMessages);
+        $optQuestion = $this->getContextRequest($question);
+        $arrContext = $this->getContext($optQuestion);
+
+        $strContextBlock = $this->buildContextBlock($arrContext);
 
         $objMessage = new Message();
-        $objMessage->content = $strQuestion;
         $objMessage->role = ChatRole::User;
         $objMessage->name = Toolkit::getUserName();
+        $objMessage->content = $this->buildFinalUserContent($strContextBlock, $optQuestion);
 
-        $arrMessages[] = $objMessage;
+        $messages[] = $objMessage;
 
         $this->objConversation->addMessage([
-            'content' => $objMessage->content,
-            'role' => $objMessage->role->value,
+            'content' => $question,
+            'role' => ChatRole::User->value,
             'name' => $objMessage->name,
             'createdAt' => \time()
         ]);
 
         $objOllamaChat = new OllamaChat($this->objConfig);
-
-        $strContent = $objOllamaChat->generateChat($arrMessages);
+        $strContent = $objOllamaChat->generateChat($messages);
         $strContent = MarkdownExtra::defaultTransform($strContent);
 
-        $arrAnswer = [
+        $answer = [
             'content' => $strContent,
             'role' => ChatRole::Assistant->value,
             'name' => $this->arrOptions['assistant']['assistantName'] ?? '',
             'createdAt' => \time()
         ];
 
-        $this->objConversation->addMessage($arrAnswer);
+        $this->objConversation->addMessage($answer);
 
-        return $arrAnswer;
+        return $answer;
     }
 
-    protected function addContext($strQuestion, &$arrMessages): void
+    protected function addInstructionMessage(array &$messages): void
     {
-
-        $strContext = $this->getContextRequest($strQuestion);
-        $arrContext = $this->getContext($strContext);
-
-        $strDocuments = '';
-        $strMeta = '';
-
-        foreach ($arrContext['documents'][0] ?? [] as $strDocument) {
-            $strDocuments .= $strDocument;
-        }
-
-        foreach ($arrContext['metadatas'][0] ?? [] as $arrMetadatas) {
-            $strMeta .= $arrMetadatas['URL'] ?? '';
-        }
-
-        $strDocuments = StringUtil::substr($strDocuments, 3000);
-
-        $objMessage = new Message();
-        $objMessage->content =
-            "Kontext:
-            $strDocuments
-            URLs:
-            $strMeta
-            Anweisung:
-            Beantworte die folgende Frage ausschließlich basierend auf dem oben angegebenen Kontext."; # Wenn im Kontext keine ausreichenden Informationen zur Beantwortung der Frage vorhanden sind, dann antworte bitte **nur** mit folgendem Satz: „Ich kann Ihre Frage nicht beantworten, da mir keine Informationen darüber bekannt sind.“
-
-        $objMessage->role = ChatRole::System;
-
-        $arrMessages[] = $objMessage;
-    }
-
-    protected function addInstructionMessage(&$arrMessages): void
-    {
-
-        if (!($this->arrOptions['assistant']['instructions'] ?? '')) {
+        if (empty($this->arrOptions['assistant']['instructions'] ?? '')) {
             return;
         }
 
@@ -124,45 +87,76 @@ class Ollama // todo add
         $objMessage->content = $this->arrOptions['assistant']['instructions'];
         $objMessage->role = ChatRole::System;
 
-        $arrMessages[] = $objMessage;
+        $messages[] = $objMessage;
     }
 
-    protected function getContextRequest($strQuestion)
+    protected function buildContextBlock(array $arrContext): string
     {
+        $strContext = "";
+        $documents = $arrContext['documents'][0] ?? [];
+        $metadata = $arrContext['metadatas'][0] ?? [];
 
-        $objOllamaChat = new OllamaChat($this->objConfig);
+        $totalLength = 0;
+        $maxLength = 4000;
 
-        $arrMessages = [];
+        foreach ($documents as $index => $document) {
+            $url = $metadata[$index]['URL'] ?? 'Keine URL vorhanden';
 
-        $strPrompt = "
-            Du bist ein NLP-Experte (Natürliche Sprachverarbeitung). Optimiere die folgende Benutzereingabe für eine semantische Vektor-Datenbanksuche. 
-            Ziel ist es, die Anfrage so umzuschreiben oder zu erweitern, dass:
-            - Der semantische Gehalt vollständig erhalten bleibt  
-            - Die Formulierung möglichst klar, vollständig und präzise ist  
-            - Relevante Synonyme oder verwandte Begriffe (wenn sinnvoll) ergänzt werden  
-            - Ambiguitäten (Mehrdeutigkeiten) vermieden oder aufgelöst werden  
-            - Kontext- und themenbezogene Schlüsselbegriffe explizit gemacht werden
-            - Verwende keine Platzhalter
-            Gib nur die optimierte, suchfreundliche Formulierung zurück – kein Kommentar, keine Erklärungen.
-            
-            Originalfrage: \"$strQuestion\"
-        ";
+            $block = \sprintf(
+                "--- \nQuelle %d:\nText: %s\nLink/URL: %s\n",
+                ($index + 1),
+                \trim($document),
+                $url
+            );
+
+            if (($totalLength + \strlen($block)) > $maxLength) {
+                break;
+            }
+
+            $strContext .= $block;
+            $totalLength .= \strlen($block);
+        }
+
+        return $strContext ?: "Kein passender Kontext in der Datenbank gefunden.";
+    }
+
+    protected function buildFinalUserContent(string $strContext, string $question): string
+    {
+        return "Nutze ausschließlich den folgenden Kontext, um die Frage am Ende zu beantworten.\n\n" .
+            "### START KONTEXT ###\n" .
+            $strContext . "\n" .
+            "### ENDE KONTEXT ###\n\n" .
+            "Bürgerfrage: \"" . $question . "\"\n\n";
+    }
+
+    protected function getContextRequest(string $question): string
+    {
+        $config = new OllamaConfig();
+        $config->url = $this->objConfig->url;
+        $config->model = 'chromadb-search-bot:latest';
+        $objOllamaChat = new OllamaChat($config);
+
+        /*
+        $strPrompt = "Optimiere die Benutzereingabe für eine semantische Suchanfrage (Vektorsuche). " .
+            "Erhalte die Kernbedeutung, füge relevante administrative Synonyme hinzu und vermeide Mehrdeutigkeiten. " .
+            "Antworte AUSSCHLIESSLICH mit dem optimierten Suchbegriff/Suchsatz. Keine Einleitung, keine Anführungszeichen.\n" .
+            "Originalfrage: \"$question\"";
+        */
 
         $objMessage = new Message();
-        $objMessage->name = '';
-        $objMessage->content = $strPrompt;
         $objMessage->role = ChatRole::User;
+        $objMessage->content = $question; //$strPrompt;
 
-        $arrMessages[] = $objMessage;
-
-        return $objOllamaChat->generateChat($arrMessages);
+        return \trim($objOllamaChat->generateChat([$objMessage]));
     }
 
-    protected function getContext($strContext): array
+    protected function getContext(string $strContext): array
     {
-
         $objChroma = new ChromaDb();
-        $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
+        $objChroma->setOllamaEmbedding(
+            Config::get('genAIChromaDBOllamaUrl'),
+            Config::get('genAIChromaDBOllamaModel')
+        );
 
         return $objChroma->get($strContext);
     }

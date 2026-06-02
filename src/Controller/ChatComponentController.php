@@ -15,7 +15,6 @@ class ChatComponentController extends AbstractController
     #[Route(path: '/ask/{assistantId}', methods: ["POST", "GET"])]
     public function askChatAssistantId($assistantId): JsonResponse
     {
-
         $this->container->get('contao.framework')->initialize();
 
         $strQuestion = Input::get('question') ?: Input::post('question');
@@ -28,7 +27,6 @@ class ChatComponentController extends AbstractController
     #[Route(path: '/conversation/{assistantId}', methods: ["POST", "GET"])]
     public function getConversation($assistantId): JsonResponse
     {
-
         $this->container->get('contao.framework')->initialize();
 
         $objAssistant = new Assistant($assistantId);
@@ -39,7 +37,6 @@ class ChatComponentController extends AbstractController
     #[Route(path: '/conversation/{assistantId}/reset', methods: ["POST", "GET"])]
     public function resetConversation($assistantId): JsonResponse
     {
-
         $this->container->get('contao.framework')->initialize();
 
         $objAssistant = new Assistant($assistantId);
