@@ -46,7 +46,8 @@ class Ollama
 
         foreach ($arrContext['metadatas'] ?? [] as $metas) {
             foreach ($metas as $meta) {
-                $sources[] = [
+                $url = $meta['URL'] ?? '';
+                $sources[$url] = [
                     'name' => $meta['TITLE'] ?? '',
                     'url' => $meta['URL'] ?? ''
                 ];
@@ -70,15 +71,15 @@ class Ollama
         ]);
 
         $objOllamaChat = new OllamaChat($this->objConfig);
-        $strContent = $objOllamaChat->generateChat($messages);
-        $strContent = MarkdownExtra::defaultTransform($strContent);
+        $content = $objOllamaChat->generateChat($messages);
+        $content = MarkdownExtra::defaultTransform($content);
 
         $answer = [
-            'content' => $strContent,
+            'content' => $content,
             'role' => ChatRole::Assistant->value,
             'name' => $this->arrOptions['assistant']['assistantName'] ?? '',
             'createdAt' => \time(),
-            'sources' => $sources
+            'sources' => \array_values($sources)
         ];
 
         $this->objConversation->addMessage($answer);
