@@ -115,6 +115,7 @@ class PageCrawler
             $strUrl = $strDomain . '/' . $objFile->path;
             $arrMeta['pageId'] = StringUtil::binToUuid($objFile->uuid);
             $arrMeta['sourceName'] = $objFile->name;
+            $arrMeta['title'] = $objFile->name;
 
             $this->insertDocument($arrFormattedDocuments, $arrMeta, $strUrl);
         }
