@@ -1,10 +1,3 @@
-:root {
-  --chat-light: #fff;
-  --chat-grey: #f4f4f4;
-  --chat-dark-color: #1066CA;
-  --chat-dark-active-color: #003b80;
-}
-
 .ce_chat_component {
   width: calc(100% - 30px);
   margin: 30px auto;
@@ -12,7 +5,6 @@
 
   .chat_container {
     margin: 30px auto;
-    background: var(--chat-light);
     padding: 30px;
     border-radius: 15px;
   }
@@ -22,7 +14,6 @@
   }
 
   .chat-message {
-    background: var(--chat-grey);
     padding: 15px;
     border-radius: 15px;
     margin-bottom: 10px;
@@ -72,8 +63,6 @@
     box-sizing: border-box;
     padding: 20px;
     margin: 0;
-    border-radius: 15px;
-    border: 2px solid var(--chat-dark-color);
     font-weight: 400;
     resize: none;
     font-size: 16px;
@@ -83,18 +72,11 @@
     line-height: 1.4;
     white-space: pre-wrap;
     word-break: break-word;
-    background-color: var(--chat-light);
-
-    &:active,
-    &:focus-visible {
-      border: 2px solid var(--chat-dark-active-color);
-    }
   }
 
   .loading {
     margin: 15px 0;
     border-radius: 15px;
-    background: var(--chat-grey);
     padding: 15px;
 
     p {
@@ -117,9 +99,6 @@
     border: 0;
     cursor: pointer;
     outline: 0;
-    font-weight: 600;
-    font-size: 15px;
-    background: var(--chat-grey);
   }
 
   .user-input-reset-button {
@@ -134,15 +113,8 @@
     bottom: 20px;
     width: 44px;
     height: 44px;
-    border-radius: 100%;
-    background: var(--chat-dark-color);
     margin: 0;
     padding: 0;
     outline: none;
-
-    &:hover,
-    &:focus-visible {
-      background: var(--chat-dark-active-color);
-    }
   }
 }

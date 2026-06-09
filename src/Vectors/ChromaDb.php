@@ -2,29 +2,24 @@
 
 namespace Alnv\GenaiBundle\Vectors;
 
-use HelgeSverre\Chromadb\Embeddings\EmbeddingFunction;
-use HelgeSverre\Chromadb\Embeddings\OllamaEmbeddings;
+use Alnv\GenaiBundle\Embeddings\OllamaEmbeddings;
 use Contao\Config;
 use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\Database;
 use Contao\StringUtil;
 use Contao\System;
-use Psr\Log\LogLevel;
 use HelgeSverre\Chromadb\Chromadb as ChromaDbClient;
+use HelgeSverre\Chromadb\Embeddings\EmbeddingFunction;
+use Psr\Log\LogLevel;
 
 // https://github.com/helgeSverre/chromadb
 class ChromaDb
 {
-
     protected string $collectionName;
     protected string $collectionId;
-
     protected string $url;
-
     protected int $port;
-
     protected EmbeddingFunction $embeddingFunction;
-
     protected ChromaDBClient $chromaDB;
 
     public function __construct($arrConfig = [])
@@ -77,7 +72,6 @@ class ChromaDb
             $arrContents = StringUtil::deserialize($objDocuments->content, true);
 
             foreach ($arrContents as $arrContent) {
-
                 if (!($arrContent['chunkNumber'] ?? '') || !($arrContent['formattedContent'] ?? '')) {
                     continue;
                 }
@@ -96,69 +90,73 @@ class ChromaDb
 
     public function sync(): void
     {
-        $arrData = [
+        $data = [
             'ids' => [],
             'documents' => [],
             'metadatas' => []
         ];
 
         $objDocuments = Database::getInstance()
-            ->prepare('SELECT * FROM tl_genai_documents WHERE synced_at>0 AND tstamp>0 AND `language`=? ORDER BY title')
-            ->limit(10)
+            ->prepare('SELECT * FROM tl_genai_documents WHERE synced_at>0 AND tstamp>0 AND `language`=? ORDER BY RAND()')
+            ->limit(1)
             ->execute('de');
 
         if (!$objDocuments->numRows) {
             return;
         }
 
-        $this->parse($objDocuments, $arrData);
+        $this->parse($objDocuments, $data);
 
-        if (empty($arrData['ids'])) {
+        if (empty($data['ids'])) {
             return;
         }
 
         try {
             // $objCollection = $this->chromaDB->getOrCreateCollection($this->strCollectionName, null, $this->objEmbeddingFunction);
-            // $objCollection->update($arrData['ids'], null, $arrData['metadatas'], $arrData['documents']);
+            // $objCollection->update($data['ids'], null, $data['metadatas'], $data['documents']);
+            // $this->flag($objDocuments);
         } catch (\Exception $error) {
             System::getContainer()
                 ->get('monolog.logger.contao')
                 ->log(LogLevel::ERROR, 'Document with ID: ' . $objDocuments->id . ': ' . $error->getMessage(), ['contao' => new ContaoContext(__CLASS__ . '::' . __FUNCTION__)]);
         }
-
-        $this->flag($objDocuments);
     }
 
     public function add(): void
     {
-        $arrData = [
+        $data = [
             'ids' => [],
             'documents' => [],
             'metadatas' => []
         ];
 
         $objDocuments = Database::getInstance()
-            ->prepare('SELECT * FROM tl_genai_documents WHERE synced_at=0 AND tstamp>0 AND `language`=? ORDER BY title')
-            ->limit(10)
+            ->prepare('SELECT * FROM tl_genai_documents WHERE synced_at=0 AND tstamp>0 AND `language`=? ORDER BY RAND()')
+            ->limit(1)
             ->execute('de');
 
         if (!$objDocuments->numRows) {
             return;
         }
 
-        $this->parse($objDocuments, $arrData);
-        if (empty($arrData['ids'])) {
+        $this->parse($objDocuments, $data);
+        if (empty($data['ids'])) {
+            if ($objDocuments->numRows) {
+                $this->flag($objDocuments);
+            }
             return;
         }
 
         try {
-            $this->chromaDB->items()->addWithEmbeddings(
-                collectionId: $this->collectionId,
-                documents: $arrData['documents'],
-                embeddingFunction: $this->embeddingFunction,
-                ids: $arrData['ids'],
-                metadatas: $arrData['metadatas']
-            );
+            $this->chromaDB
+                ->items()
+                ->addWithEmbeddings(
+                    collectionId: $this->collectionId,
+                    documents: $data['documents'],
+                    embeddingFunction: $this->embeddingFunction,
+                    ids: $data['ids'],
+                    metadatas: $data['metadatas']
+                );
 
             $this->flag($objDocuments);
         } catch (\Exception $error) {
@@ -171,7 +169,6 @@ class ChromaDb
     protected function flag($objDocuments): void
     {
         $objDocuments->reset();
-
         while ($objDocuments->next()) {
             Database::getInstance()
                 ->prepare('UPDATE tl_genai_documents %s WHERE id=?')

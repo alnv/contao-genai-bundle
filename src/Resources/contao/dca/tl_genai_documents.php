@@ -23,7 +23,9 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             'panelLayout' => 'filter,limit;sort,search',
             'headerFields' => ['title'],
             'child_record_callback' => function ($arrRow) {
-                return ($arrRow['title'] ?? '-') . ($arrRow['synced_at'] ? ' - ' . \date(Config::get('datimFormat'), $arrRow['synced_at']) : '');
+                $synced = ($arrRow['synced_at'] ? \date(Config::get('datimFormat'), $arrRow['synced_at']) : '');
+
+                return ($arrRow['title'] ?? '-') . ($synced ? ('<span style="font-size: 10px; padding: 5px;color: #fff; background: green;border-radius: 10px;margin-left:5px;">'. $synced .'</span>') : '');
             }
         ],
         'label' => [],
@@ -117,7 +119,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
         ],
         'pageId' => [
             'search' => true,
-            'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
+            'sql' => "varchar(64) NOT NULL default ''"
         ],
         'created_at' => [
             'flag' => 6,

@@ -36,7 +36,6 @@ class Assistant
 
     public function messages(): array
     {
-
         $objConversation = new Conversation();
         $objConversation->startIfNot($this->arrAssistant['id'] ?? 0);
 
@@ -45,7 +44,6 @@ class Assistant
 
     public function resetConversion(): void
     {
-
         $objConversation = new Conversation();
 
         $objConversation->reset();
@@ -53,9 +51,7 @@ class Assistant
 
     public function ask($strQuestion): array
     {
-
         $objChatObject = $this->objChat->getChatObject();
-
         if (!$objChatObject) {
             return [];
         }

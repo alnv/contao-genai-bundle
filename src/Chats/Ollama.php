@@ -9,7 +9,8 @@ use Alnv\GenaiBundle\Vectors\ChromaDb;
 use Contao\Config;
 use LLPhant\Chat\Enums\ChatRole;
 use LLPhant\Chat\Message;
-use LLPhant\Chat\OllamaChat;
+# use LLPhant\Chat\OllamaChat;
+use Alnv\GenaiBundle\ChatExtensions\OllamaChat;
 use LLPhant\OllamaConfig;
 use Michelf\MarkdownExtra;
 
@@ -24,9 +25,7 @@ class Ollama
     {
         $this->objChatEntity = $objChatEntity;
         $this->arrOptions = $arrOptions;
-
         $arrChatEntity = $this->objChatEntity->getChatArray();
-
         $this->objConfig = new OllamaConfig();
 
         $this->objConfig->model = $arrChatEntity['model'] ?? '';
@@ -41,9 +40,18 @@ class Ollama
         $messages = [];
 
         $this->addInstructionMessage($messages);
-
         $optQuestion = $this->getContextRequest($question);
         $arrContext = $this->getContext($optQuestion);
+        $sources = [];
+
+        foreach ($arrContext['metadatas'] ?? [] as $metas) {
+            foreach ($metas as $meta) {
+                $sources[] = [
+                    'name' => $meta['TITLE'] ?? '',
+                    'url' => $meta['URL'] ?? ''
+                ];
+            }
+        }
 
         $strContextBlock = $this->buildContextBlock($arrContext);
 
@@ -69,7 +77,8 @@ class Ollama
             'content' => $strContent,
             'role' => ChatRole::Assistant->value,
             'name' => $this->arrOptions['assistant']['assistantName'] ?? '',
-            'createdAt' => \time()
+            'createdAt' => \time(),
+            'sources' => $sources
         ];
 
         $this->objConversation->addMessage($answer);
@@ -136,16 +145,9 @@ class Ollama
         $config->model = 'chromadb-search-bot:latest';
         $objOllamaChat = new OllamaChat($config);
 
-        /*
-        $strPrompt = "Optimiere die Benutzereingabe für eine semantische Suchanfrage (Vektorsuche). " .
-            "Erhalte die Kernbedeutung, füge relevante administrative Synonyme hinzu und vermeide Mehrdeutigkeiten. " .
-            "Antworte AUSSCHLIESSLICH mit dem optimierten Suchbegriff/Suchsatz. Keine Einleitung, keine Anführungszeichen.\n" .
-            "Originalfrage: \"$question\"";
-        */
-
         $objMessage = new Message();
         $objMessage->role = ChatRole::User;
-        $objMessage->content = $question; //$strPrompt;
+        $objMessage->content = $question;
 
         return \trim($objOllamaChat->generateChat([$objMessage]));
     }

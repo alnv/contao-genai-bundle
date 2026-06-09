@@ -19,13 +19,12 @@ class PageCrawler
 
     public function __construct(Document $document, array $arrMeta = [])
     {
-
         $strHtml = $document->getBody();
         $strTitle = $arrMeta['title'] ?? '';
         $strContent = $this->parseContent($strHtml);
 
         $arrDocuments = (new TextDataReader($strContent, ['sourceName' => $strTitle, 'id' => $arrMeta['pageId'] ?? '']))->getDocuments();
-        $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 775, '.', 25);
+        $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 600, '.', 60);
         $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
 
         $strUrl = $document->getUri()->__toString();
@@ -38,7 +37,6 @@ class PageCrawler
 
     protected function insertDocument($arrFormattedDocuments, $arrMeta, $strUrl): void
     {
-
         $arrContent = [];
         foreach ($arrFormattedDocuments as $objDocument) {
             $arrContent[] = [
@@ -52,25 +50,35 @@ class PageCrawler
             'updated_at' => \time(),
             'pid' => 1, // todo
             'title' => $arrMeta['title'] ?? '',
-            // 'description' => '',
             'content' => \serialize($arrContent),
             'pageId' => $arrMeta['pageId'] ?? '',
             'url' => $strUrl,
             'language' => $arrMeta['language'] ?? ''
         ];
 
-        $objDocumentEntity = Database::getInstance()->prepare('SELECT id, url FROM tl_genai_documents WHERE url=?')->limit(1)->execute($strUrl);
+        $objDocumentEntity = Database::getInstance()
+            ->prepare('SELECT id, url FROM tl_genai_documents WHERE url=?')
+            ->limit(1)
+            ->execute($strUrl);
+
         if (!$objDocumentEntity->numRows) {
             $arrSet['created_at'] = \time();
-            Database::getInstance()->prepare('INSERT INTO tl_genai_documents %s')->set($arrSet)->execute();
+            Database::getInstance()
+                ->prepare('INSERT INTO tl_genai_documents %s')
+                ->set($arrSet)
+                ->execute();
+
         } else {
-            Database::getInstance()->prepare('UPDATE tl_genai_documents %s WHERE id=?')->limit(1)->set($arrSet)->execute($objDocumentEntity->id);
+            Database::getInstance()
+                ->prepare('UPDATE tl_genai_documents %s WHERE id=?')
+                ->limit(1)
+                ->set($arrSet)
+                ->execute($objDocumentEntity->id);
         }
     }
 
     protected function addPdfs($strHtml, $arrMeta, $strPageUrl): void
     {
-
         $this->objCrawler = new Crawler($strHtml);
         $objLinks = $this->objCrawler->filter("body a");
         $strRootDir = System::getContainer()->getParameter('kernel.project_dir');
@@ -82,7 +90,6 @@ class PageCrawler
             . (isset($arrDomain['port']) && $arrDomain['port'] ? ':' . $arrDomain['port'] : '');
 
         foreach ($objLinks as $objLink) {
-
             $strHref = $objLink->getAttribute('href');
             if (!$strHref || !\str_contains($strHref, '.pdf')) {
                 continue;
@@ -106,6 +113,8 @@ class PageCrawler
             $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
 
             $strUrl = $strDomain . '/' . $objFile->path;
+            $arrMeta['pageId'] = StringUtil::binToUuid($objFile->uuid);
+            $arrMeta['sourceName'] = $objFile->name;
 
             $this->insertDocument($arrFormattedDocuments, $arrMeta, $strUrl);
         }
@@ -113,7 +122,6 @@ class PageCrawler
 
     public function parseContent($strContent): string
     {
-
         $strContent = \str_replace(["\n", "\r", "\t", '&#160;', '&nbsp;', '&shy;'], [' ', ' ', ' ', ' ', ' ', ''], $strContent);
 
         while (($intStart = \strpos($strContent, '<script')) !== false) {

@@ -2,8 +2,8 @@
 
 use Contao\ArrayUtil;
 
-use Alnv\GenaiBundle\Vectors\ChromaDb;
-use Contao\Config;
+// use Alnv\GenaiBundle\Vectors\ChromaDb;
+// use Contao\Config;
 // $objChroma = new ChromaDb();
 // $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
 // $objChroma->deleteAll();

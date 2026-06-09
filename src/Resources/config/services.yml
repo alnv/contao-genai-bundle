@@ -11,3 +11,7 @@ services:
 
   Alnv\GenaiBundle\Controller\ChatComponentController:
     public: true
+
+  Alnv\GenaiBundle\Cronjobs\SyncVectors:
+    tags:
+      - { name: contao.cronjob, interval: minutely }
