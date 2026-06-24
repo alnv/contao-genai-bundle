@@ -27,15 +27,17 @@ class PageCrawler
         $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 600, '.', 60);
         $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
 
-        $strUrl = $document->getUri()->__toString();
-        $strUrl = StringUtil::decodeEntities($strUrl);
+        $url = $document->getUri()
+            ->withFragment('')
+            ->withQuery('')
+            ->__toString();
 
-        $this->insertDocument($arrFormattedDocuments, $arrMeta, $strUrl);
-
-        $this->addPdfs($strHtml, $arrMeta, $strUrl);
+        $url = StringUtil::decodeEntities($url);
+        $this->insertDocument($arrFormattedDocuments, $arrMeta, $url);
+        $this->addPdfs($strHtml, $arrMeta, $url);
     }
 
-    protected function insertDocument($arrFormattedDocuments, $arrMeta, $strUrl): void
+    protected function insertDocument($arrFormattedDocuments, $arrMeta, $url): void
     {
         $arrContent = [];
         foreach ($arrFormattedDocuments as $objDocument) {
@@ -52,14 +54,14 @@ class PageCrawler
             'title' => $arrMeta['title'] ?? '',
             'content' => \serialize($arrContent),
             'pageId' => $arrMeta['pageId'] ?? '',
-            'url' => $strUrl,
+            'url' => $url,
             'language' => $arrMeta['language'] ?? ''
         ];
 
         $objDocumentEntity = Database::getInstance()
             ->prepare('SELECT id, url FROM tl_genai_documents WHERE url=?')
             ->limit(1)
-            ->execute($strUrl);
+            ->execute($url);
 
         if (!$objDocumentEntity->numRows) {
             $arrSet['created_at'] = \time();
