@@ -3,6 +3,8 @@
 namespace Alnv\GenaiBundle\DocumentCollectors;
 
 use Alnv\GenaiBundle\DataReader\TextDataReader;
+use Contao\Config;
+use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\CoreBundle\Search\Document;
 use Contao\Database;
 use Contao\FilesModel;
@@ -24,7 +26,7 @@ class PageCrawler
         $strContent = $this->parseContent($strHtml);
 
         $arrDocuments = (new TextDataReader($strContent, ['sourceName' => $strTitle, 'id' => $arrMeta['pageId'] ?? '']))->getDocuments();
-        $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 600, '.', 60);
+        $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 800, '.', 60);
         $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
 
         $url = $document->getUri()
@@ -34,6 +36,11 @@ class PageCrawler
 
         $url = StringUtil::decodeEntities($url);
         $this->insertDocument($arrFormattedDocuments, $arrMeta, $url);
+
+        if (Config::get('gemAINoPdfIndexing')) {
+            return;
+        }
+
         $this->addPdfs($strHtml, $arrMeta, $url);
     }
 
@@ -79,47 +86,74 @@ class PageCrawler
         }
     }
 
-    protected function addPdfs($strHtml, $arrMeta, $strPageUrl): void
+    protected function addPdfs(string $html, array $meta, string $pageUrl): void
     {
-        $this->objCrawler = new Crawler($strHtml);
-        $objLinks = $this->objCrawler->filter("body a");
-        $strRootDir = System::getContainer()->getParameter('kernel.project_dir');
+        $crawler = new Crawler($html);
+        $rootDir = System::getContainer()->getParameter('kernel.project_dir');
 
-        $arrDomain = \parse_url($strPageUrl);
-        $strDomain = ($arrDomain['scheme'] ?? '')
-            . '://'
-            . ($arrDomain['host'] ?? '')
-            . (isset($arrDomain['port']) && $arrDomain['port'] ? ':' . $arrDomain['port'] : '');
+        $parsedPageUrl = \parse_url($pageUrl);
+        $domain = \sprintf(
+            '%s://%s%s',
+            $parsedPageUrl['scheme'] ?? 'https',
+            $parsedPageUrl['host'] ?? '',
+            isset($parsedPageUrl['port']) ? ':' . $parsedPageUrl['port'] : ''
+        );
 
-        foreach ($objLinks as $objLink) {
-            $strHref = $objLink->getAttribute('href');
-            if (!$strHref || !\str_contains($strHref, '.pdf')) {
+        $processed = [];
+
+        foreach ($crawler->filter('body a') as $link) {
+            $href = \trim($link->getAttribute('href'));
+
+            if ($href === '' || \stripos($href, '.pdf') === false) {
                 continue;
             }
 
-            $arrUrlFragments = \parse_url($strHref, PHP_URL_QUERY);
-            \parse_str($arrUrlFragments, $arrQueries);
+            $url = \parse_url($href);
+            \parse_str($url['query'] ?? '', $query);
 
-            $strFile = $arrQueries['file'] ?? ($arrUrlFragments['path'] ?? '');
+            $file = $query['file'] ?? ($url['path'] ?? '');
 
-            $objFile = FilesModel::findByPath($strFile);
-            if (!$objFile) {
+            if ($file === '' || isset($processed[$file])) {
                 continue;
             }
 
-            $strFilePath = $strRootDir . '/' . $objFile->path;
-            $objReader = new FileDataReader($strFilePath);
-            $arrDocuments = $objReader->getDocuments();
+            $processed[$file] = true;
+            $fileModel = FilesModel::findByPath($file);
 
-            $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 800);
-            $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
+            if (!$fileModel) {
+                continue;
+            }
 
-            $strUrl = $strDomain . '/' . $objFile->path;
-            $arrMeta['pageId'] = StringUtil::binToUuid($objFile->uuid);
-            $arrMeta['sourceName'] = $objFile->name;
-            $arrMeta['title'] = $objFile->name;
+            try {
+                $documents = (new FileDataReader($rootDir . '/' . $fileModel->path))->getDocuments();
+                $documents = EmbeddingFormatter::formatEmbeddings(
+                    DocumentSplitter::splitDocuments($documents, 800, '.', 60)
+                );
 
-            $this->insertDocument($arrFormattedDocuments, $arrMeta, $strUrl);
+                $documentMeta = [
+                    ...$meta,
+                    'pageId' => StringUtil::binToUuid($fileModel->uuid),
+                    'sourceName' => $fileModel->name,
+                    'title' => $fileModel->name,
+                ];
+
+                $this->insertDocument(
+                    $documents,
+                    $documentMeta,
+                    $domain . '/' . $fileModel->path
+                );
+            } catch (\Throwable $e) {
+                System::getContainer()
+                    ->get('monolog.logger.contao')
+                    ->error(
+                        sprintf(
+                            'Could not crawl PDF "%s": %s',
+                            $fileModel->path,
+                            $e->getMessage()
+                        ),
+                        ['contao' => new ContaoContext(__METHOD__)]
+                    );
+            }
         }
     }
 

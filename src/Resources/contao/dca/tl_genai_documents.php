@@ -1,15 +1,32 @@
 <?php
 
+use Alnv\GenaiBundle\Vectors\ChromaDb;
+use Contao\Environment;
+use Contao\Controller;
+use Contao\Message;
 use Contao\DC_Table;
 use Contao\Config;
+use Contao\Input;
 
 $GLOBALS['TL_DCA']['tl_genai_documents'] = [
     'config' => [
         'dataContainer' => DC_Table::class,
         'backendSearchIgnore' => true,
         'ptable' => 'tl_genai_documents_collections',
-        'onload_callback' => [],
-        'onsubmit_callback' => [],
+        'onload_callback' => [
+            function () {
+                $objChroma = new ChromaDb();
+
+                if (Input::get('resetAll')) {
+                    $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
+                    $objChroma->deleteAll();
+
+                    Controller::redirect(\preg_replace('/&(amp;)?resetAll=[^&]*/i', '', \preg_replace('/&(amp;)?' . \preg_quote(Input::get('resetAll'), '/') . '=[^&]*/i', '', Environment::get('request'))));
+                }
+
+                Message::addInfo('Anzahl Chunks in der Vektordatenbank: ' . $objChroma->count());
+            }
+        ],
         'sql' => [
             'keys' => [
                 'id' => 'primary'
@@ -30,6 +47,11 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
         ],
         'label' => [],
         'global_operations' => [
+            'resetAll' => [
+                'href' => 'resetAll=1',
+                'class' => 'header_edit_all',
+                'attributes' => 'onclick="Backend.getScrollOffset()" accesskey="e"'
+            ],
             'all' => [
                 'href' => 'act=select',
                 'class' => 'header_edit_all',

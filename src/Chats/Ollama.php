@@ -40,8 +40,8 @@ class Ollama
         $messages = [];
 
         $this->addInstructionMessage($messages);
-        $optQuestion = $this->getContextRequest($question);
-        $arrContext = $this->getContext($optQuestion);
+        // $optQuestion = $this->getContextRequest($question);
+        $arrContext = $this->getContext($question);
         $sources = [];
 
         foreach ($arrContext['metadatas'] ?? [] as $metas) {
@@ -59,7 +59,7 @@ class Ollama
         $objMessage = new Message();
         $objMessage->role = ChatRole::User;
         $objMessage->name = Toolkit::getUserName();
-        $objMessage->content = $this->buildFinalUserContent($strContextBlock, $optQuestion);
+        $objMessage->content = $this->buildFinalUserContent($strContextBlock, $question);
 
         $messages[] = $objMessage;
 
@@ -136,7 +136,7 @@ class Ollama
             "### START KONTEXT ###\n" .
             $strContext . "\n" .
             "### ENDE KONTEXT ###\n\n" .
-            "Bürgerfrage: \"" . $question . "\"\n\n";
+            "Frage: \"" . $question . "\"\n\n";
     }
 
     protected function getContextRequest(string $question): string

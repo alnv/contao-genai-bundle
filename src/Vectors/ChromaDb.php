@@ -24,7 +24,6 @@ class ChromaDb
 
     public function __construct($arrConfig = [])
     {
-        // todo dyn per db
         $this->url = Config::get('genAIChromaDBUrl') ?: '';
         $this->port = Config::get('genAIChromaDBPort') ?: null;
         $this->collectionName = Config::get('genAIChromaDBCollectionName') ?: '';
@@ -35,8 +34,7 @@ class ChromaDb
             port: $this->port
         );
 
-        $response = $this->chromaDB->collections()->create($this->collectionName, true);
-        $this->collectionId = $response->json('id');
+        $this->create();
     }
 
     public function setOllamaEmbedding($strBaseUrl, $strModel): void
@@ -172,7 +170,8 @@ class ChromaDb
         while ($objDocuments->next()) {
             Database::getInstance()
                 ->prepare('UPDATE tl_genai_documents %s WHERE id=?')
-                ->set(['tstamp' => \time(), 'synced_at' => \time()])->limit(1)
+                ->set(['tstamp' => \time(), 'synced_at' => \time()])
+                ->limit(1)
                 ->execute($objDocuments->id);
         }
     }
@@ -180,14 +179,18 @@ class ChromaDb
     public function deleteAll(): void
     {
         Database::getInstance()
-            ->prepare('UPDATE tl_genai_documents %s')
-            ->set([
-                'tstamp' => \time(),
-                'synced_at' => 0
-            ])
+            ->prepare('DELETE FROM tl_genai_documents')
             ->execute();
 
-        $this->chromaDB->items()->delete($this->collectionName);
+        $this->chromaDB->collections()->delete($this->collectionName);
+
+        $this->create();
+    }
+
+    public function create()
+    {
+        $response = $this->chromaDB->collections()->create($this->collectionName, true);
+        $this->collectionId = $response->json('id');
     }
 
     public function count(): int

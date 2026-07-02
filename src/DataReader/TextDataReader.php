@@ -25,10 +25,13 @@ final class TextDataReader implements DataReader
 
     private function getDocument(string $content): mixed
     {
-
+        $content = \mb_convert_encoding($content, 'UTF-8', 'UTF-8');
         $content = \preg_replace('/\s+/', ' ', $content);
-        $content = \html_entity_decode($content, ENT_QUOTES, 'UTF-8');
-        $content = \str_replace("\u{A0}", " ", $content);
+        $content = \preg_replace('/ {2,}/', ' ', $content);
+        $content = \str_replace('_', ' ', $content);
+        $content = \str_replace('-', '', $content);
+        $content = \preg_replace('/[•·▪]/u', '', $content);
+        $content = \trim($content);
 
         $objDocument = new Document();
 

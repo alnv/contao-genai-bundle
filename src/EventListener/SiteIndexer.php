@@ -2,6 +2,7 @@
 
 namespace Alnv\GenaiBundle\EventListener;
 
+use Contao\Config;
 use Contao\CoreBundle\Framework\ContaoFramework;
 use Contao\CoreBundle\Search\Document;
 use Contao\CoreBundle\Search\Indexer\IndexerException;
@@ -24,6 +25,9 @@ class SiteIndexer implements IndexerInterface
 
     public function index(Document $document): void
     {
+        if (Config::get('gemAINoIndexing')) {
+            return;
+        }
 
         if (200 !== $document->getStatusCode()) {
             $this->throwBecause('HTTP Statuscode is not equal to 200.');

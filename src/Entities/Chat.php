@@ -26,9 +26,7 @@ class Chat
 
     public function getChatObject()
     {
-
         switch ($this->arrChat['type']) {
-
             case 'ollama':
                 return new Ollama($this, $this->arrOptions);
             case 'chatgpt':
