@@ -29,7 +29,6 @@ final class TextDataReader implements DataReader
         $content = \preg_replace('/\s+/', ' ', $content);
         $content = \preg_replace('/ {2,}/', ' ', $content);
         $content = \str_replace('_', ' ', $content);
-        $content = \str_replace('-', '', $content);
         $content = \preg_replace('/[•·▪]/u', '', $content);
         $content = \trim($content);
 
