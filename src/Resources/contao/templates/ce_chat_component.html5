@@ -1,18 +1,23 @@
+<script type="module">
+    import * as marked from "/bundles/alnvgenai/js/marked.js"
+
+    window.marked = marked;
+</script>
 <div id="<?= $this->templateId ?>" class="ce_chat_component block" style="opacity: 0" ref="chat-component">
     <div class="chat_container">
         <?php if ($this->content['headline'] || $this->content['text']): ?>
-        <div class="chat-content">
-            <?php if ($this->content['headline']): ?>
-            <div class="chat-headline">
-                <h2><?= $this->content['headline'] ?></h2>
+            <div class="chat-content">
+                <?php if ($this->content['headline']): ?>
+                    <div class="chat-headline">
+                        <h2><?= $this->content['headline'] ?></h2>
+                    </div>
+                <?php endif; ?>
+                <?php if ($this->content['text']): ?>
+                    <div class="chat-description">
+                        <p><?= $this->content['text'] ?></p>
+                    </div>
+                <?php endif; ?>
             </div>
-            <?php endif; ?>
-            <?php if ($this->content['text']): ?>
-            <div class="chat-description">
-                <p><?= $this->content['text'] ?></p>
-            </div>
-            <?php endif; ?>
-        </div>
         <?php endif; ?>
 
         <div class="chat-messages">
@@ -20,22 +25,30 @@
                 <div class="chat-name">{{ message.name }}</div>
                 <div class="chat-content" v-html="message.content"></div>
                 <ul class="chat-sources" v-if="message.sources && message.sources.length">
-                    <li v-for="source in message.sources"><a :href="source.url" target="_blank">{{ source.name }}</a></li>
+                    <li v-for="source in message.sources"><a :href="source.url" target="_blank">{{ source.name }}</a>
+                    </li>
                 </ul>
             </div>
 
             <div v-if="running" class="loading">
-                <p>Einen kleinen Moment bitte, ich bin gerade dabei, Ihre Frage zu beantworten. Die Suche läuft bereits. <img src="/system/themes/flexible/icons/loading.svg" alt="loading"></p>
+                <p><img src="/system/themes/flexible/icons/loading.svg" alt="loading"> Einen kleinen Moment bitte, ich
+                    bin gerade dabei, Ihre Frage zu beantworten</p>
             </div>
         </div>
 
         <div class="chat-input-component">
             <label for="user-input"></label>
-            <textarea id="user-input" type="text" placeholder="Stellen Sie Ihre Frage …" autocomplete="off" autofocus="autofocus" v-on:keyup.enter="ask" v-model="question"></textarea>
+            <textarea id="user-input" type="text" placeholder="Stellen Sie Ihre Frage …" autocomplete="off"
+                      autofocus="autofocus" v-on:keyup.enter="ask" v-model="question"></textarea>
 
             <div class="controls">
                 <button class="user-input-reset-button" @click="reset">Chat löschen</button>
-                <button class="user-input-send-button" @click="ask"><svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M13.3398 12.5156L25.4258 17.7656C26.3008 18.1484 26.3008 19.3789 25.4258 19.7617L13.3398 25.0117C12.4102 25.4219 11.4531 24.3828 11.9453 23.4805L13.8594 19.9531C13.9688 19.7344 14.1875 19.5703 14.4609 19.543L19.2734 18.9414C19.3555 18.9414 19.4375 18.8594 19.4375 18.75C19.4375 18.668 19.3555 18.5859 19.2734 18.5859L14.4609 17.9844C14.1875 17.9297 13.9688 17.793 13.8594 17.5742L11.9453 14.0469C11.4531 13.1445 12.4102 12.1055 13.3398 12.5156Z" fill="white"></path></svg></button>
+                <button class="user-input-send-button" @click="ask">
+                    <svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M13.3398 12.5156L25.4258 17.7656C26.3008 18.1484 26.3008 19.3789 25.4258 19.7617L13.3398 25.0117C12.4102 25.4219 11.4531 24.3828 11.9453 23.4805L13.8594 19.9531C13.9688 19.7344 14.1875 19.5703 14.4609 19.543L19.2734 18.9414C19.3555 18.9414 19.4375 18.8594 19.4375 18.75C19.4375 18.668 19.3555 18.5859 19.2734 18.5859L14.4609 17.9844C14.1875 17.9297 13.9688 17.793 13.8594 17.5742L11.9453 14.0469C11.4531 13.1445 12.4102 12.1055 13.3398 12.5156Z"
+                              fill="white"></path>
+                    </svg>
+                </button>
             </div>
         </div>
     </div>
@@ -43,6 +56,7 @@
 
 <script>
     (function () {
+
         new Vue({
             el: '#<?= $this->templateId ?>',
             data: function () {
@@ -82,6 +96,84 @@
                         this.running = false;
                     }.bind(this));
                 },
+                askStream: function () {
+                    if (this.running || !this.question) {
+                        return;
+                    }
+                    this.running = true;
+
+                    let self = this;
+                    const formData = new URLSearchParams();
+                    formData.append('question', this.question);
+
+                    let firstToken = false;
+                    let streamBuffer = '';
+
+                    fetch('gen-ai/chat-component/ask-stream/<?= $this->assistantId ?>', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/x-www-form-urlencoded'
+                        },
+                        body: formData
+                    }).then(response => {
+                        if (!response.ok) {
+                            throw new Error('Netzwerkfehler');
+                        }
+
+                        const reader = response.body.getReader();
+                        const decoder = new TextDecoder('utf-8');
+
+
+                        const readStream = () => {
+                            reader.read().then(({done, value}) => {
+                                if (done) {
+                                    self.running = false;
+                                    return;
+                                }
+
+                                if (!value) { readStream(); return; }
+
+                                if (!firstToken) {
+                                    this.messages.push({
+                                        name: '',
+                                        role: '',
+                                        content: '',
+                                        sources: []
+                                    });
+                                    firstToken = true;
+                                    self.running = false;
+                                }
+
+                                streamBuffer += decoder.decode(value, {stream: true});
+                                const lines = streamBuffer.split('\n');
+                                streamBuffer = lines.pop();
+
+                                for (const line of lines) {
+                                    if (line.trim() === '') continue;
+                                    try {
+                                        const json = JSON.parse(line);
+                                        this.appendMessageChunk(json);
+                                    } catch (e) {
+                                        console.error('JSON Parse Fehler:', line, e);
+                                    }
+                                }
+
+                                readStream();
+                            }).catch(error => {
+                                console.error('Stream-Fehler:', error);
+                                self.running = false;
+                            });
+                        };
+
+                        readStream();
+                    }).catch(error => {
+                        console.error('Fehler bei der Anfrage:', error);
+                        self.running = false;
+                    });
+                },
+                appendMessageChunk: function (json) {
+                    this.streamMessage(json.content, json.name, json.role, json.sources);
+                },
                 fetchRequest: function () {
                     this.$http.post('gen-ai/chat-component/conversation/<?= $this->assistantId ?>',
                         {
@@ -109,8 +201,8 @@
                             emulateJSON: true,
                             'Content-Type': 'application/x-www-form-urlencoded'
                         }
-                    ).then(function (res) {
-                        //
+                    ).then(function () {
+                        this.running = false;
                     }.bind(this));
                 },
                 ask: function () {
@@ -118,8 +210,9 @@
                         return;
                     }
 
-                    this.askRequest();
                     this.addMessage(this.question, 'Gast', '<?= $this->chatRoleUser ?>');
+                    // this.askRequest();
+                    this.askStream();
                     this.question = '';
                 },
                 addMessage: function (content, name, role, sources) {
@@ -129,6 +222,12 @@
                         content: content,
                         sources: sources
                     })
+                },
+                streamMessage: function (content, name, role, sources) {
+                    this.messages[this.messages.length - 1]['name'] = name;
+                    this.messages[this.messages.length - 1]['role'] = role;
+                    this.messages[this.messages.length - 1]['content'] = window.marked.parse(content);
+                    this.messages[this.messages.length - 1]['sources'] = sources;
                 }
             },
             mounted: function () {

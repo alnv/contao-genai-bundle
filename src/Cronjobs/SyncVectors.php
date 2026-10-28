@@ -15,6 +15,6 @@ class SyncVectors
 
         $objChroma = new ChromaDb();
         $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
-        $objChroma->add();
+        // $objChroma->add();
     }
 }

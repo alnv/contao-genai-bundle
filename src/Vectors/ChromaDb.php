@@ -57,7 +57,7 @@ class ChromaDb
             collectionId: $this->collectionId,
             queryText: $query,
             embeddingFunction: $this->embeddingFunction,
-            nResults: 5,
+            nResults: 10,
             include: ['documents', 'metadatas', 'distances']
         );
 

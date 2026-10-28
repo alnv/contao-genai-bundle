@@ -33,19 +33,17 @@ class OllamaEmbeddings implements EmbeddingFunction
     public function __construct(
         private readonly string $model = 'all-minilm',
         private readonly string $baseUrl = 'http://localhost:11434',
-        private readonly int    $timeout = 60,
+        private readonly int    $timeout = 90,
     )
     {
-
         $username = Config::get('aiServerUser');
         $password = Config::get('aiServerPassword');
 
         $base64Credentials = base64_encode("$username:$password");
-        $this->client = HttpClient::create([
+        $this->client = new Client([
             'base_uri' => rtrim($this->baseUrl, '/'),
             'headers' => [
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . $base64Credentials
+                'Authorization' => 'Basic ' . $base64Credentials,
             ],
             'timeout' => $this->timeout,
         ]);
@@ -68,11 +66,20 @@ class OllamaEmbeddings implements EmbeddingFunction
             throw EmbeddingException::emptyInput();
         }
 
+        $headers = [
+            'Content-Type' => 'application/json',
+        ];
+
+        if ($hostIp = Config::get('aiServerHostIP')) {
+            $headers['Host'] = $hostIp;
+        }
+
         try {
             $embeddings = [];
 
             foreach ($texts as $text) {
                 $response = $this->client->post('/api/embed', [
+                    'headers' => $headers,
                     'json' => [
                         'model' => $this->model,
                         'input' => $text,
@@ -85,7 +92,6 @@ class OllamaEmbeddings implements EmbeddingFunction
                     throw EmbeddingException::invalidResponse('Ollama', 'Missing or invalid "embeddings" field');
                 }
 
-                // Ollama returns array of embeddings, we take the first one
                 $embeddings[] = $result['embeddings'][0] ?? [];
             }
 

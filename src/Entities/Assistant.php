@@ -58,4 +58,14 @@ class Assistant
 
         return $objChatObject->ask($strQuestion);
     }
+
+    public function getChat()
+    {
+        $objChatObject = $this->objChat->getChatObject();
+        if (!$objChatObject) {
+            return [];
+        }
+
+        return $objChatObject;
+    }
 }

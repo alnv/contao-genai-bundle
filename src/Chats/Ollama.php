@@ -9,7 +9,6 @@ use Alnv\GenaiBundle\Vectors\ChromaDb;
 use Contao\Config;
 use LLPhant\Chat\Enums\ChatRole;
 use LLPhant\Chat\Message;
-# use LLPhant\Chat\OllamaChat;
 use Alnv\GenaiBundle\ChatExtensions\OllamaChat;
 use LLPhant\OllamaConfig;
 use Michelf\MarkdownExtra;
@@ -28,6 +27,7 @@ class Ollama
         $arrChatEntity = $this->objChatEntity->getChatArray();
         $this->objConfig = new OllamaConfig();
 
+        $this->objConfig->timeout = 90;
         $this->objConfig->model = $arrChatEntity['model'] ?? '';
         $this->objConfig->url = $arrChatEntity['url'] ?? '';
 
@@ -35,14 +35,15 @@ class Ollama
         $this->objConversation->startIfNot($this->arrOptions['assistant']['id'] ?? 0);
     }
 
-    public function ask(string $question): array
+    public function getConversation(): Conversation
     {
-        $messages = [];
+        return $this->objConversation;
+    }
 
+    public function getConfig(string $question, &$messages, &$sources): OllamaChat
+    {
         $this->addInstructionMessage($messages);
-        // $optQuestion = $this->getContextRequest($question);
         $arrContext = $this->getContext($question);
-        $sources = [];
 
         foreach ($arrContext['metadatas'] ?? [] as $metas) {
             foreach ($metas as $meta) {
@@ -70,16 +71,24 @@ class Ollama
             'createdAt' => \time()
         ]);
 
-        $objOllamaChat = new OllamaChat($this->objConfig);
-        $content = $objOllamaChat->generateChat($messages);
+        return new OllamaChat($this->objConfig);
+    }
+
+    public function ask(string $question): array
+    {
+        $sources = [];
+        $messages = [];
+
+        $ollamaChat = $this->getConfig($question, $messages, $sources);
+        $content = $ollamaChat->generateChat($messages);
         $content = MarkdownExtra::defaultTransform($content);
 
         $answer = [
             'content' => $content,
-            'role' => ChatRole::Assistant->value,
-            'name' => $this->arrOptions['assistant']['assistantName'] ?? '',
             'createdAt' => \time(),
-            'sources' => \array_values($sources)
+            'role' => ChatRole::Assistant->value,
+            'sources' => \array_values($sources),
+            'name' => $this->arrOptions['assistant']['assistantName'] ?? ''
         ];
 
         $this->objConversation->addMessage($answer);
@@ -144,6 +153,8 @@ class Ollama
         $config = new OllamaConfig();
         $config->url = $this->objConfig->url;
         $config->model = 'chromadb-search-bot:latest';
+        $config->timeout = 90;
+
         $objOllamaChat = new OllamaChat($config);
 
         $objMessage = new Message();

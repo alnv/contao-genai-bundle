@@ -33,7 +33,6 @@ final class TextDataReader implements DataReader
         $content = \trim($content);
 
         $objDocument = new Document();
-
         $objDocument->id = $this->arrMeta['id'] ?? '';
         $objDocument->content = $content;
         $objDocument->sourceType = $this->arrMeta['sourceType'] ?? '';
