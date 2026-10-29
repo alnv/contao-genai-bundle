@@ -43,7 +43,7 @@
 
             <div class="controls">
                 <button class="user-input-reset-button" @click="reset">Chat löschen</button>
-                <button class="user-input-send-button" @click="ask">
+                <button class="user-input-send-button" @click="ask" v-show="!running">
                     <svg viewBox="0 0 38 38" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <path d="M13.3398 12.5156L25.4258 17.7656C26.3008 18.1484 26.3008 19.3789 25.4258 19.7617L13.3398 25.0117C12.4102 25.4219 11.4531 24.3828 11.9453 23.4805L13.8594 19.9531C13.9688 19.7344 14.1875 19.5703 14.4609 19.543L19.2734 18.9414C19.3555 18.9414 19.4375 18.8594 19.4375 18.75C19.4375 18.668 19.3555 18.5859 19.2734 18.5859L14.4609 17.9844C14.1875 17.9297 13.9688 17.793 13.8594 17.5742L11.9453 14.0469C11.4531 13.1445 12.4102 12.1055 13.3398 12.5156Z"
                               fill="white"></path>

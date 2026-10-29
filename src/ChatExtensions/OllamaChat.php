@@ -73,7 +73,7 @@ class OllamaChat extends OllamaChatOrigin
             'model' => $this->config->model,
             'messages' => $this->prepareMessages($messages),
             'stream' => true,
-            'thinking' => false
+            'think' => false
         ];
 
         return $this->sendRequest(
