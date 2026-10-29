@@ -3,9 +3,12 @@
 namespace Alnv\GenaiBundle\Controller;
 
 use Alnv\GenaiBundle\Entities\Assistant;
+# use Alnv\GenaiBundle\Tools\RagToolVectorSearch;
 use Contao\CoreBundle\Controller\AbstractController;
 use Contao\Input;
 use LLPhant\Chat\Enums\ChatRole;
+# use LLPhant\Chat\FunctionInfo\FunctionInfo;
+# use LLPhant\Chat\FunctionInfo\Parameter;
 use LLPhant\Utility;
 use Michelf\MarkdownExtra;
 use Psr\Http\Message\StreamInterface;
@@ -51,6 +54,28 @@ class ChatComponentController extends AbstractController
         $assistantData = $assistant->getAssistantArray();
         $chatObject = $assistant->getChat();
         $chat = $chatObject->getConfig($strQuestion, $messages, $sources);
+
+        /*
+        $question = new Parameter(
+            'question',
+            'string',
+            'Suchanfrage für die technische Dokumentation'
+        );
+
+        $tool = new FunctionInfo(
+            'getContext',
+            new RagToolVectorSearch(),
+            'Durchsucht die technischen Dokumente von systec Controls '
+            . 'nach belegbaren Informationen zu Produkten, Messprinzipien, '
+            . 'Messbereichen, Genauigkeiten, Betriebsbedingungen und '
+            . 'Zulassungen. Verwende dieses Werkzeug vor einer Antwort '
+            . 'auf produktspezifische oder technische Fragen. '
+            . 'Die Suchanfrage soll möglichst konkret sein.',
+            [$question]
+        );
+
+        $chat->addFunction($tool);
+        */
 
         $response = new StreamedResponse(function () use ($chat, $chatObject, $assistant, $messages, $sources, $assistantData) {
             try {

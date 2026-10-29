@@ -8,7 +8,6 @@ use LLPhant\Chat\OllamaChat as OllamaChatOrigin;
 use LLPhant\Exception\HttpException;
 use LLPhant\OllamaConfig;
 use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\StreamInterface;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 

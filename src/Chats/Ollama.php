@@ -43,8 +43,9 @@ class Ollama
     public function getConfig(string $question, &$messages, &$sources): OllamaChat
     {
         $this->addInstructionMessage($messages);
-        $arrContext = $this->getContext($question);
 
+        $arrContext = $this->getContext($question);
+        /*
         foreach ($arrContext['metadatas'] ?? [] as $metas) {
             foreach ($metas as $meta) {
                 $url = $meta['URL'] ?? '';
@@ -54,6 +55,7 @@ class Ollama
                 ];
             }
         }
+        */
 
         $strContextBlock = $this->buildContextBlock($arrContext);
 
@@ -116,7 +118,7 @@ class Ollama
         $metadata = $arrContext['metadatas'][0] ?? [];
 
         $totalLength = 0;
-        $maxLength = 4000;
+        $maxLength = 8000;
 
         foreach ($documents as $index => $document) {
             $url = $metadata[$index]['URL'] ?? 'Keine URL vorhanden';
@@ -146,22 +148,6 @@ class Ollama
             $strContext . "\n" .
             "### ENDE KONTEXT ###\n\n" .
             "Frage: \"" . $question . "\"\n\n";
-    }
-
-    protected function getContextRequest(string $question): string
-    {
-        $config = new OllamaConfig();
-        $config->url = $this->objConfig->url;
-        $config->model = 'chromadb-search-bot:latest';
-        $config->timeout = 90;
-
-        $objOllamaChat = new OllamaChat($config);
-
-        $objMessage = new Message();
-        $objMessage->role = ChatRole::User;
-        $objMessage->content = $question;
-
-        return \trim($objOllamaChat->generateChat([$objMessage]));
     }
 
     protected function getContext(string $strContext): array
