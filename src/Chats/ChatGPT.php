@@ -2,6 +2,7 @@
 
 namespace Alnv\GenaiBundle\Chats;
 
+use Alnv\GenaiBundle\ChatExtensions\OpenAIChat;
 use Alnv\GenaiBundle\Entities\Chat;
 use Alnv\GenaiBundle\Entities\Conversation;
 use Alnv\GenaiBundle\Helpers\Toolkit;
@@ -9,158 +10,275 @@ use Alnv\GenaiBundle\Vectors\ChromaDb;
 use Contao\Config;
 use LLPhant\Chat\Enums\ChatRole;
 use LLPhant\Chat\Message;
-use LLPhant\Chat\OpenAIChat;
 use LLPhant\OpenAIConfig;
 use Michelf\MarkdownExtra;
 
-class ChatGPT // todo add
+/**
+ * ChatGPT / OpenAI Chat Integration
+ * 
+ * Handles chat requests with OpenAI models including:
+ * - SSE streaming support
+ * - RAG context retrieval from ChromaDB
+ * - Collection filtering
+ * - Conversation management
+ */
+class ChatGPT
 {
-
     protected Chat $objChatEntity;
-
     protected OpenAIConfig $objConfig;
-
     protected array $arrOptions = [];
-
     protected Conversation $objConversation;
 
-    public function __construct(Chat $objChatEntity, $arrOptions = [])
-    {
+    // Configurable limits
+    protected int $maxContextLength = 8000;
+    protected int $topK = 10;
 
+    public function __construct(Chat $objChatEntity, array $arrOptions = [])
+    {
         $this->objChatEntity = $objChatEntity;
         $this->arrOptions = $arrOptions;
-
         $arrChatEntity = $this->objChatEntity->getChatArray();
 
         $this->objConfig = new OpenAIConfig();
-        $this->objConfig->model = $arrChatEntity['model'] ?? '';
+        $this->objConfig->model = $arrChatEntity['model'] ?? 'gpt-4o-mini';
         $this->objConfig->apiKey = $arrChatEntity['token'] ?? '';
+
+        // Optional: Custom API URL (for Azure OpenAI or proxies)
+        if (!empty($arrChatEntity['url'])) {
+            $this->objConfig->url = $arrChatEntity['url'];
+        }
+
+        // Use configurable timeout
+        $this->objConfig->timeout = (int) (Config::get('genAIOllamaTimeout') ?: 120);
+
+        // Configurable context limits
+        $this->maxContextLength = (int) (Config::get('genAIMaxContextLength') ?: 8000);
+        $this->topK = (int) (Config::get('genAITopK') ?: 10);
 
         $this->objConversation = new Conversation();
         $this->objConversation->startIfNot($this->arrOptions['assistant']['id'] ?? 0);
     }
 
-    public function ask($strQuestion): array
+    public function getConversation(): Conversation
     {
+        return $this->objConversation;
+    }
 
-        $arrMessages = [];
+    /**
+     * Prepare chat configuration for streaming
+     * 
+     * @param string $question User's question
+     * @param array &$messages Output: prepared messages array
+     * @param array &$sources Output: extracted sources for frontend
+     * @return OpenAIChat Configured chat object ready for streaming
+     */
+    public function getConfig(string $question, array &$messages, array &$sources): OpenAIChat
+    {
+        // 1. Get context FIRST (needed for system message)
+        $arrContext = $this->getContext($question);
 
-        $this->addInstructionMessage($arrMessages);
-        $this->addContext($strQuestion, $arrMessages);
+        // 2. Extract sources for frontend display
+        $sources = $this->extractSources($arrContext);
 
+        // 3. Build context block
+        $strContextBlock = $this->buildContextBlock($arrContext);
+
+        // 4. System message with STATIC instructions + CONTEXT
+        // This order enables prompt caching: static part first, then dynamic context
+        $this->addSystemMessage($messages, $strContextBlock);
+
+        // 5. User question (simple, just the question)
         $objMessage = new Message();
-        $objMessage->content = $strQuestion;
         $objMessage->role = ChatRole::User;
         $objMessage->name = Toolkit::getUserName();
+        $objMessage->content = $question;
 
-        $arrMessages[] = $objMessage;
+        $messages[] = $objMessage;
 
+        // Save user message to conversation
         $this->objConversation->addMessage([
-            'content' => $objMessage->content,
-            'role' => $objMessage->role->value,
+            'content' => $question,
+            'role' => ChatRole::User->value,
             'name' => $objMessage->name,
             'createdAt' => \time()
         ]);
 
-        $objChatGPT = new OpenAIChat($this->objConfig);
+        // Create chat with OpenAI-specific options
+        $openAIChat = new OpenAIChat($this->objConfig);
 
-        $strContent = $objChatGPT->generateChat($arrMessages);
-        $strContent = MarkdownExtra::defaultTransform($strContent);
+        // Set model options
+        $openAIChat->setModelOptions([
+            'temperature' => (float) (Config::get('genAIOpenAITemperature') ?: 0.7),
+            'max_tokens' => (int) (Config::get('genAIOpenAIMaxTokens') ?: 4096),
+        ]);
 
-        $arrAnswer = [
-            'content' => $strContent,
+        return $openAIChat;
+    }
+
+    /**
+     * Non-streaming ask method (legacy support)
+     */
+    public function ask(string $question): array
+    {
+        $sources = [];
+        $messages = [];
+
+        $openAIChat = $this->getConfig($question, $messages, $sources);
+        $content = $openAIChat->generateChat($messages);
+        $content = MarkdownExtra::defaultTransform($content);
+
+        $answer = [
+            'content' => $content,
+            'createdAt' => \time(),
             'role' => ChatRole::Assistant->value,
-            'name' => $this->arrOptions['assistant']['assistantName'] ?? '',
-            'createdAt' => \time()
+            'sources' => \array_values($sources),
+            'name' => $this->arrOptions['assistant']['assistantName'] ?? ''
         ];
 
-        $this->objConversation->addMessage($arrAnswer);
+        $this->objConversation->addMessage($answer);
 
-        return $arrAnswer;
+        return $answer;
     }
 
-    protected function addContext($strQuestion, &$arrMessages): void
+    /**
+     * Build system message with static instructions first, then context
+     * This order enables LLM prompt caching (static prefix can be cached)
+     */
+    protected function addSystemMessage(array &$messages, string $contextBlock): void
     {
+        $instructions = $this->arrOptions['assistant']['instructions'] ?? '';
 
-        $strContext = $this->getContextRequest($strQuestion);
-        $arrContext = $this->getContext($strContext . ' ' . $strQuestion);
+        // Static instructions first (cacheable)
+        $systemContent = !empty($instructions)
+            ? $instructions . "\n\n"
+            : "";
 
-        $strDocuments = '';
-        $strMeta = '';
+        // Context instructions (static template)
+        $systemContent .= "Nutze ausschließlich den folgenden Kontext, um Fragen zu beantworten. " .
+            "Wenn keine relevanten Informationen im Kontext vorhanden sind, sage dies ehrlich. " .
+            "Gib bei Antworten die Quellen-URLs an, wenn möglich.\n\n";
 
-        foreach ($arrContext['documents'][0] ?? [] as $strDocument) {
-            $strDocuments .= $strDocument;
-        }
-
-        foreach ($arrContext['metadatas'][0] ?? [] as $arrMetadatas) {
-            $strMeta .= $arrMetadatas['URL'] ?? '';
-        }
+        // Dynamic context (changes per request, but at the end)
+        $systemContent .= "### KONTEXT ###\n" . $contextBlock . "\n### ENDE KONTEXT ###";
 
         $objMessage = new Message();
-        $objMessage->content =
-            "Kontext:
-            $strDocuments
-            Quellen-URLs:
-            $strMeta
-            Anweisung:
-            Beantworte die folgende Frage ausschließlich basierend auf dem oben angegebenen Kontext.  Wenn im Kontext keine ausreichenden Informationen zur Beantwortung der Frage vorhanden sind, dann antworte bitte **nur** mit folgendem Satz (und nichts weiter): „Ich kann Ihre Frage nicht beantworten, da mir keine Informationen darüber bekannt sind.“";
-
+        $objMessage->content = $systemContent;
         $objMessage->role = ChatRole::System;
 
-        $arrMessages[] = $objMessage;
+        $messages[] = $objMessage;
     }
 
-    protected function addInstructionMessage(&$arrMessages): void
+    /**
+     * Extract sources from ChromaDB results for frontend display
+     * Supports both old and new metadata formats
+     */
+    protected function extractSources(array $arrContext): array
     {
+        $sources = [];
 
-        if (!($this->arrOptions['assistant']['instructions'] ?? '')) {
-            return;
+        foreach ($arrContext['metadatas'][0] ?? [] as $meta) {
+            // Support both old (uppercase) and new (lowercase) metadata keys
+            $url = $meta['url'] ?? $meta['URL'] ?? '';
+            $title = $meta['title'] ?? $meta['TITLE'] ?? '';
+
+            if ($url && !isset($sources[$url])) {
+                $sources[$url] = [
+                    'name' => $title ?: $url,
+                    'url' => $url
+                ];
+            }
         }
 
-        $objMessage = new Message();
-        $objMessage->content = $this->arrOptions['assistant']['instructions'];
-        $objMessage->role = ChatRole::System;
-
-        $arrMessages[] = $objMessage;
+        return $sources;
     }
 
-    protected function getContextRequest($strQuestion)
+    /**
+     * Build formatted context block from ChromaDB results
+     */
+    protected function buildContextBlock(array $arrContext): string
     {
+        $strContext = "";
+        $documents = $arrContext['documents'][0] ?? [];
+        $metadata = $arrContext['metadatas'][0] ?? [];
 
-        $objChatGPT = new OpenAIChat($this->objConfig);
+        $totalLength = 0;
 
-        $arrMessages = [];
+        foreach ($documents as $index => $document) {
+            // Support both old (uppercase) and new (lowercase) metadata keys
+            $url = $metadata[$index]['url'] ?? $metadata[$index]['URL'] ?? '';
+            $title = $metadata[$index]['title'] ?? $metadata[$index]['TITLE'] ?? '';
 
-        $strPrompt = "
-            Du bist ein NLP-Experte. Optimiere die folgende Benutzereingabe für eine semantische Vektor-Datenbanksuche. 
-            Ziel ist es, die Anfrage so umzuschreiben oder zu erweitern, dass:
-            - Der semantische Gehalt vollständig erhalten bleibt  
-            - Die Formulierung möglichst klar, vollständig und präzise ist  
-            - Relevante Synonyme oder verwandte Begriffe (wenn sinnvoll) ergänzt werden  
-            - Ambiguitäten (Mehrdeutigkeiten) vermieden oder aufgelöst werden  
-            - Kontext- und themenbezogene Schlüsselbegriffe explizit gemacht werden
-            - Verwende keine Platzhalter
-            Gib nur die optimierte, suchfreundliche Formulierung zurück – kein Kommentar, keine Erklärungen.
-            
-            Originalfrage: \"$strQuestion\"
-        ";
+            $block = \sprintf(
+                "---\nQuelle %d%s:\n%s\nURL: %s\n",
+                ($index + 1),
+                $title ? " ({$title})" : '',
+                \trim($document),
+                $url ?: 'N/A'
+            );
 
-        $objMessage = new Message();
-        $objMessage->name = '';
-        $objMessage->content = $strPrompt;
-        $objMessage->role = ChatRole::User;
+            if (($totalLength + \strlen($block)) > $this->maxContextLength) {
+                break;
+            }
 
-        $arrMessages[] = $objMessage;
+            $strContext .= $block;
+            $totalLength += \strlen($block);
+        }
 
-        return $objChatGPT->generateChat($arrMessages);
+        return $strContext ?: "Kein passender Kontext in der Datenbank gefunden.";
     }
 
-    protected function getContext($strContext): array
+    /**
+     * Get context from ChromaDB with filtering
+     */
+    protected function getContext(string $strContext): array
     {
+        // Build filters from assistant/chat configuration
+        $filters = [];
+
+        // Root page filter for multi-site setups
+        $rootPage = $this->arrOptions['rootPage'] ?? null;
+        if (!$rootPage && !empty($this->arrOptions['assistant']['rootPage'])) {
+            $rootPage = $this->arrOptions['assistant']['rootPage'];
+        }
+        if ($rootPage) {
+            $filters['root_page'] = (string) $rootPage;
+        }
+
+        // Collection filter - only use documents from selected collections
+        $collectionIds = $this->arrOptions['assistant']['documentCollections'] ?? null;
+        if ($collectionIds) {
+            // Deserialize if stored as serialized array
+            if (is_string($collectionIds)) {
+                $collectionIds = \Contao\StringUtil::deserialize($collectionIds, true);
+            }
+            if (!empty($collectionIds)) {
+                $filters['collection_ids'] = $collectionIds;
+            }
+        }
+
+        // Get embedding configuration from global config
+        $embeddingConfig = $this->getEmbeddingConfig();
 
         $objChroma = new ChromaDb();
-        $objChroma->setOpenAIEmbedding(Config::get('genAIChromaDBOpenAiToken'), Config::get('genAIChromaDBOpenAiOrganisation'), Config::get('genAIChromaDBOpenAiModel'));
+        $objChroma->setOllamaEmbedding(
+            $embeddingConfig['url'],
+            $embeddingConfig['model']
+        );
 
-        return $objChroma->get($strContext);
+        return $objChroma->get($strContext, $this->topK, !empty($filters) ? $filters : null);
+    }
+
+    /**
+     * Get embedding configuration from global settings
+     * 
+     * Uses the same Ollama embeddings as the Ollama chat implementation.
+     * OpenAI embeddings can be added later if needed.
+     */
+    protected function getEmbeddingConfig(): array
+    {
+        return [
+            'url' => Config::get('genAIChromaDBOllamaUrl'),
+            'model' => Config::get('genAIChromaDBOllamaModel')
+        ];
     }
 }

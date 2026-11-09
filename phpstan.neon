@@ -1,0 +1,31 @@
+includes:
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
+
+parameters:
+    level: 6
+    paths:
+        - src
+    excludePaths:
+        - src/Resources
+    
+    # Contao-specific ignores
+    ignoreErrors:
+        # Contao global arrays
+        - '#Access to an undefined static property Contao\\Config::\$#'
+        - '#Call to an undefined static method Contao\\Config::get\(\)#'
+        - '#Call to an undefined static method Contao\\Database::getInstance\(\)#'
+        - '#Call to an undefined static method Contao\\System::getContainer\(\)#'
+        
+        # LLPhant types
+        - '#Parameter \$messages of method .* expects array<LLPhant\\Chat\\Message>#'
+        
+        # Dynamic Contao models
+        - '#Call to an undefined method Contao\\Model::__call\(\)#'
+        - '#Access to an undefined property Contao\\Model::#'
+    
+    # Treat missing classes as errors
+    reportUnmatchedIgnoredErrors: false
+    
+    # Symfony container
+    symfony:
+        containerXmlPath: var/cache/dev/App_KernelDevDebugContainer.xml

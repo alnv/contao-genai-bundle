@@ -1,0 +1,25 @@
+<?php
+/**
+ * GenAI Chat Content Element Template
+ *
+ * @var Contao\Template $this
+ * @var bool $isBackend
+ * @var int $assistantId
+ * @var string $content
+ */
+?>
+
+<?php if ($this->isBackend ?? false): ?>
+<div class="genai-chat-preview" style="padding: 20px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 8px; text-align: center;">
+    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="1.5" style="margin-bottom: 10px;">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        <path d="M8 10h.01M12 10h.01M16 10h.01"/>
+    </svg>
+    <p style="margin: 0; color: #666; font-size: 14px;">
+        <strong>GenAI Chat-Widget</strong><br>
+        Assistent ID: <?= $this->assistantId ?>
+    </p>
+</div>
+<?php else: ?>
+<?= $this->content ?>
+<?php endif; ?>

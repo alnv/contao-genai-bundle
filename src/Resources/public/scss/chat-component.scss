@@ -1,120 +1,575 @@
-.ce_chat_component {
-  width: calc(100% - 30px);
-  margin: 30px auto;
-  max-width: 1024px;
+/**
+ * GenAI Chat Component Styles
+ * 
+ * Features:
+ * - CSS Custom Properties for theming
+ * - Dark mode via prefers-color-scheme
+ * - Mobile-first responsive design
+ * - Accessibility-focused
+ * - No global style pollution (scoped)
+ */
 
-  .chat_container {
-    margin: 30px auto;
-    padding: 30px;
-    border-radius: 15px;
+/* ========================================
+   CSS Custom Properties (Theming)
+   ======================================== */
+
+.genai-chat {
+  /* Colors - Light Mode */
+  --genai-bg: #ffffff;
+  --genai-bg-secondary: #f5f5f5;
+  --genai-text: #1a1a1a;
+  --genai-text-muted: #666666;
+  --genai-border: #e0e0e0;
+  --genai-primary: #2563eb;
+  --genai-primary-hover: #1d4ed8;
+  --genai-primary-text: #ffffff;
+  --genai-user-bg: #e8f0fe;
+  --genai-assistant-bg: #f8f9fa;
+  --genai-error-bg: #fef2f2;
+  --genai-error-text: #dc2626;
+  --genai-success: #16a34a;
+  
+  /* Spacing */
+  --genai-spacing-xs: 0.25rem;
+  --genai-spacing-sm: 0.5rem;
+  --genai-spacing-md: 1rem;
+  --genai-spacing-lg: 1.5rem;
+  --genai-spacing-xl: 2rem;
+  
+  /* Typography */
+  --genai-font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --genai-font-size-sm: 0.875rem;
+  --genai-font-size-base: 1rem;
+  --genai-font-size-lg: 1.125rem;
+  --genai-line-height: 1.5;
+  
+  /* Borders */
+  --genai-radius-sm: 0.375rem;
+  --genai-radius-md: 0.75rem;
+  --genai-radius-lg: 1rem;
+  --genai-radius-full: 9999px;
+  
+  /* Shadows */
+  --genai-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --genai-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  
+  /* Transitions */
+  --genai-transition: 150ms ease;
+}
+
+/* Dark Mode */
+@media (prefers-color-scheme: dark) {
+  .genai-chat {
+    --genai-bg: #1a1a1a;
+    --genai-bg-secondary: #2a2a2a;
+    --genai-text: #f0f0f0;
+    --genai-text-muted: #a0a0a0;
+    --genai-border: #404040;
+    --genai-primary: #3b82f6;
+    --genai-primary-hover: #60a5fa;
+    --genai-user-bg: #1e3a5f;
+    --genai-assistant-bg: #262626;
+    --genai-error-bg: #450a0a;
+    --genai-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+    --genai-shadow-md: 0 4px 6px rgba(0, 0, 0, 0.3);
   }
+}
 
-  .chat-messages {
-    margin: 15px 0;
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .genai-chat,
+  .genai-chat * {
+    transition: none !important;
+    animation: none !important;
   }
+}
 
-  .chat-message {
-    padding: 15px;
-    border-radius: 15px;
-    margin-bottom: 10px;
+/* ========================================
+   Base Layout
+   ======================================== */
 
-    &:last-child {
-      margin-bottom: 0;
-    }
+.genai-chat {
+  display: flex;
+  flex-direction: column;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: var(--genai-spacing-md);
+  font-size: var(--genai-font-size-base);
+  line-height: var(--genai-line-height);
+  color: var(--genai-text);
+  background: var(--genai-bg);
+  border-radius: var(--genai-radius-lg);
+  box-shadow: var(--genai-shadow-md);
+  opacity: 0;
+  transition: opacity var(--genai-transition);
+}
+
+/* ========================================
+   Header
+   ======================================== */
+
+.genai-chat__header {
+  margin-bottom: var(--genai-spacing-lg);
+  text-align: center;
+}
+
+.genai-chat__title {
+  margin: 0 0 var(--genai-spacing-sm);
+  font-size: var(--genai-font-size-lg);
+  font-weight: 600;
+}
+
+.genai-chat__description {
+  margin: 0;
+  color: var(--genai-text-muted);
+  font-size: var(--genai-font-size-sm);
+}
+
+/* ========================================
+   Messages Container
+   ======================================== */
+
+.genai-chat__messages {
+  flex: 1;
+  min-height: 300px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--genai-spacing-sm);
+  scroll-behavior: smooth;
+}
+
+/* Mobile: full height */
+@media (max-width: 640px) {
+  .genai-chat__messages {
+    max-height: calc(100dvh - 280px);
+    min-height: 200px;
   }
+}
 
-  .chat-name {
-    font-size: 16px;
-    line-height: 1.1;
-    font-weight: 600;
+/* Scrollbar styling */
+.genai-chat__messages::-webkit-scrollbar {
+  width: 6px;
+}
+
+.genai-chat__messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.genai-chat__messages::-webkit-scrollbar-thumb {
+  background: var(--genai-border);
+  border-radius: var(--genai-radius-full);
+}
+
+/* ========================================
+   Messages
+   ======================================== */
+
+.genai-chat__message {
+  margin-bottom: var(--genai-spacing-md);
+  padding: var(--genai-spacing-md);
+  border-radius: var(--genai-radius-md);
+  animation: genai-fadeIn 0.2s ease;
+}
+
+@keyframes genai-fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.genai-chat__message--user {
+  background: var(--genai-user-bg);
+  margin-left: var(--genai-spacing-xl);
+}
+
+.genai-chat__message--assistant {
+  background: var(--genai-assistant-bg);
+  margin-right: var(--genai-spacing-xl);
+}
+
+@media (max-width: 640px) {
+  .genai-chat__message--user,
+  .genai-chat__message--assistant {
+    margin-left: 0;
+    margin-right: 0;
   }
+}
 
-  .chat-content {
-    margin: 15px 0 0 0;
-    font-weight: 400;
-    line-height: 1.4;
+.genai-chat__message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--genai-spacing-sm);
+}
 
-    p {
-      margin: 0 0 10px 0;
+.genai-chat__message-name {
+  font-size: var(--genai-font-size-sm);
+  font-weight: 600;
+  color: var(--genai-text-muted);
+}
 
-      &:last-child {
-        margin-bottom: 0;
-      }
-    }
+.genai-chat__copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--genai-text-muted);
+  border-radius: var(--genai-radius-sm);
+  cursor: pointer;
+  transition: all var(--genai-transition);
+}
 
-    ol,
-    ul {
-      margin: 10px 0;
+.genai-chat__copy-btn:hover {
+  background: var(--genai-border);
+  color: var(--genai-text);
+}
 
-      li {
-        margin: 0;
-      }
-    }
+.genai-chat__message-content {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.genai-chat__message-content p {
+  margin: 0 0 var(--genai-spacing-sm);
+}
+
+.genai-chat__message-content p:last-child {
+  margin-bottom: 0;
+}
+
+.genai-chat__message-content code {
+  padding: 0.125rem 0.375rem;
+  background: var(--genai-bg-secondary);
+  border-radius: var(--genai-radius-sm);
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.875em;
+}
+
+.genai-chat__message-content pre {
+  margin: var(--genai-spacing-sm) 0;
+  padding: var(--genai-spacing-md);
+  background: var(--genai-bg-secondary);
+  border-radius: var(--genai-radius-sm);
+  overflow-x: auto;
+}
+
+.genai-chat__message-content pre code {
+  padding: 0;
+  background: transparent;
+}
+
+.genai-chat__message-content ul,
+.genai-chat__message-content ol {
+  margin: var(--genai-spacing-sm) 0;
+  padding-left: var(--genai-spacing-lg);
+}
+
+.genai-chat__message-content a {
+  color: var(--genai-primary);
+  text-decoration: underline;
+}
+
+.genai-chat__message-content a:hover {
+  color: var(--genai-primary-hover);
+}
+
+/* ========================================
+   Sources
+   ======================================== */
+
+.genai-chat__message-sources {
+  margin-top: var(--genai-spacing-md);
+  padding-top: var(--genai-spacing-sm);
+  border-top: 1px solid var(--genai-border);
+}
+
+.genai-chat__message-sources summary {
+  cursor: pointer;
+  font-size: var(--genai-font-size-sm);
+  color: var(--genai-text-muted);
+}
+
+.genai-chat__message-sources ul {
+  margin: var(--genai-spacing-sm) 0 0;
+  padding-left: var(--genai-spacing-md);
+  font-size: var(--genai-font-size-sm);
+}
+
+.genai-chat__message-sources a {
+  color: var(--genai-primary);
+  text-decoration: none;
+}
+
+.genai-chat__message-sources a:hover {
+  text-decoration: underline;
+}
+
+/* ========================================
+   Scroll Button
+   ======================================== */
+
+.genai-chat__scroll-btn {
+  position: sticky;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: var(--genai-spacing-sm) auto;
+  padding: 0;
+  border: 1px solid var(--genai-border);
+  background: var(--genai-bg);
+  color: var(--genai-text-muted);
+  border-radius: var(--genai-radius-full);
+  box-shadow: var(--genai-shadow-md);
+  cursor: pointer;
+  transition: all var(--genai-transition);
+}
+
+.genai-chat__scroll-btn:hover {
+  background: var(--genai-bg-secondary);
+  color: var(--genai-text);
+}
+
+/* ========================================
+   Loading Indicator
+   ======================================== */
+
+.genai-chat__loading {
+  display: flex;
+  align-items: center;
+  gap: var(--genai-spacing-sm);
+  padding: var(--genai-spacing-md);
+  color: var(--genai-text-muted);
+  font-size: var(--genai-font-size-sm);
+
+  &[hidden] {
+    display: none;
   }
+}
 
-  .chat-input-component {
-    position: relative;
-    margin: 15px 0;
+.genai-chat__loading-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.genai-chat__loading-dots span {
+  width: 8px;
+  height: 8px;
+  background: var(--genai-primary);
+  border-radius: var(--genai-radius-full);
+  animation: genai-bounce 1.4s infinite ease-in-out both;
+}
+
+.genai-chat__loading-dots span:nth-child(1) { animation-delay: -0.32s; }
+.genai-chat__loading-dots span:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes genai-bounce {
+  0%, 80%, 100% { transform: scale(0.6); opacity: 0.5; }
+  40% { transform: scale(1); opacity: 1; }
+}
+
+/* ========================================
+   Error Message
+   ======================================== */
+
+.genai-chat__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--genai-spacing-md);
+  padding: var(--genai-spacing-md);
+  background: var(--genai-error-bg);
+  color: var(--genai-error-text);
+  border-radius: var(--genai-radius-md);
+  font-size: var(--genai-font-size-sm);
+
+  &[hidden] {
+    display: none;
   }
+}
 
-  textarea {
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    padding: 20px;
-    margin: 0;
-    font-weight: 400;
-    resize: none;
-    font-size: 16px;
-    min-height: 8em;
-    max-height: 8em;
-    overflow-y: auto;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
+.genai-chat__error-retry {
+  padding: var(--genai-spacing-xs) var(--genai-spacing-sm);
+  border: 1px solid var(--genai-error-text);
+  background: transparent;
+  color: var(--genai-error-text);
+  border-radius: var(--genai-radius-sm);
+  font-size: var(--genai-font-size-sm);
+  cursor: pointer;
+  transition: all var(--genai-transition);
+}
+
+.genai-chat__error-retry:hover {
+  background: var(--genai-error-text);
+  color: var(--genai-primary-text);
+}
+
+/* ========================================
+   Input Form
+   ======================================== */
+
+.genai-chat__form {
+  display: flex;
+  gap: var(--genai-spacing-sm);
+  margin-top: var(--genai-spacing-md);
+  padding-top: var(--genai-spacing-md);
+  border-top: 1px solid var(--genai-border);
+}
+
+.genai-chat__input-wrapper {
+  flex: 1;
+  position: relative;
+}
+
+.genai-chat__input {
+  width: 100%;
+  min-height: 44px;
+  max-height: 200px;
+  padding: var(--genai-spacing-sm) var(--genai-spacing-md);
+  padding-right: 70px;
+  border: 1px solid var(--genai-border);
+  background: var(--genai-bg);
+  color: var(--genai-text);
+  font-family: inherit;
+  font-size: var(--genai-font-size-base);
+  line-height: var(--genai-line-height);
+  border-radius: var(--genai-radius-md);
+  resize: none;
+  transition: border-color var(--genai-transition), box-shadow var(--genai-transition);
+}
+
+.genai-chat__input:focus {
+  outline: none;
+  border-color: var(--genai-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.genai-chat__input::placeholder {
+  color: var(--genai-text-muted);
+}
+
+.genai-chat__input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.genai-chat__char-count {
+  position: absolute;
+  right: var(--genai-spacing-md);
+  bottom: var(--genai-spacing-sm);
+  font-size: 0.75rem;
+  color: var(--genai-text-muted);
+  pointer-events: none;
+}
+
+/* ========================================
+   Action Buttons
+   ======================================== */
+
+.genai-chat__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--genai-spacing-xs);
+}
+
+.genai-chat__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--genai-spacing-xs);
+  padding: var(--genai-spacing-sm);
+  border: none;
+  border-radius: var(--genai-radius-md);
+  font-family: inherit;
+  font-size: var(--genai-font-size-sm);
+  cursor: pointer;
+  transition: all var(--genai-transition);
+}
+
+.genai-chat__btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.genai-chat__btn--send {
+  width: 44px;
+  height: 44px;
+  background: var(--genai-primary);
+  color: var(--genai-primary-text);
+}
+
+.genai-chat__btn--send:hover:not(:disabled) {
+  background: var(--genai-primary-hover);
+}
+
+.genai-chat__btn--reset {
+  height: 36px;
+  padding: 0 var(--genai-spacing-sm);
+  background: transparent;
+  color: var(--genai-text-muted);
+  border: 1px solid var(--genai-border);
+}
+
+.genai-chat__btn--reset:hover {
+  background: var(--genai-bg-secondary);
+  color: var(--genai-text);
+}
+
+.genai-chat__btn-text {
+  display: none;
+}
+
+@media (min-width: 640px) {
+  .genai-chat__btn-text {
+    display: inline;
   }
+}
 
-  .loading {
-    margin: 15px 0;
-    border-radius: 15px;
-    padding: 15px;
+/* ========================================
+   Mobile Fullscreen Mode (optional)
+   ======================================== */
 
-    p {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 600;
-    }
-
-    img {
-      max-height: 18px;
-    }
+@media (max-width: 640px) {
+  .genai-chat--fullscreen {
+    position: fixed;
+    inset: 0;
+    max-width: none;
+    border-radius: 0;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
-
-  button {
-    line-height: 40px;
-    height: 40px;
-    padding: 0 10px;
-    border-radius: 15px;
-    display: inline-block;
-    border: 0;
-    cursor: pointer;
-    outline: 0;
+  
+  .genai-chat--fullscreen .genai-chat__messages {
+    max-height: calc(100dvh - 200px);
   }
+}
 
-  .user-input-reset-button {
-    position: absolute;
-    left: 15px;
-    bottom: 20px;
+/* ========================================
+   Print Styles
+   ======================================== */
+
+@media print {
+  .genai-chat {
+    box-shadow: none;
+    border: 1px solid #000;
   }
-
-  .user-input-send-button {
-    position: absolute;
-    right: 15px;
-    bottom: 20px;
-    width: 44px;
-    height: 44px;
-    margin: 0;
-    padding: 0;
-    outline: none;
+  
+  .genai-chat__form,
+  .genai-chat__scroll-btn,
+  .genai-chat__loading,
+  .genai-chat__error,
+  .genai-chat__copy-btn {
+    display: none;
+  }
+  
+  .genai-chat__messages {
+    max-height: none;
+    overflow: visible;
   }
 }

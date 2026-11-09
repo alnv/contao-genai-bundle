@@ -1,7 +1,7 @@
 {
   "name": "alnv/genai-bundle",
   "type": "contao-bundle",
-  "license": "proprietary",
+  "license": "MIT",
   "description": "",
   "keywords": ["contao", "chatbot"],
   "authors": [

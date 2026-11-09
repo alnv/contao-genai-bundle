@@ -3,15 +3,81 @@ services:
     autowire: true
     autoconfigure: true
 
+  # Search Indexer
   Alnv\GenaiBundle\EventListener\SiteIndexer:
     arguments:
       - '@contao.framework'
     tags:
       - { name: 'contao.search_indexer' }
 
+  # Chat Controller
   Alnv\GenaiBundle\Controller\ChatComponentController:
     public: true
+    arguments:
+      $logger: '@?monolog.logger.genai'
 
+  # Index Queue Service
+  Alnv\GenaiBundle\Service\IndexQueue:
+    arguments:
+      $logger: '@?monolog.logger.genai'
+
+  # Content Change Listener (DCA callbacks)
+  Alnv\GenaiBundle\EventListener\ContentChangeListener:
+    arguments:
+      - '@Alnv\GenaiBundle\Service\IndexQueue'
+
+  # Cronjobs
   Alnv\GenaiBundle\Cronjobs\SyncVectors:
     tags:
       - { name: contao.cronjob, interval: minutely }
+
+  Alnv\GenaiBundle\Cronjobs\CleanupOrphans:
+    tags:
+      - { name: contao.cronjob, interval: daily }
+
+  # Console Commands
+  Alnv\GenaiBundle\Command\WarmupCommand:
+    arguments:
+      - '@contao.framework'
+    tags:
+      - { name: console.command }
+
+  Alnv\GenaiBundle\Command\IndexStatusCommand:
+    arguments:
+      - '@contao.framework'
+    tags:
+      - { name: console.command }
+
+  Alnv\GenaiBundle\Command\IndexSyncCommand:
+    arguments:
+      - '@contao.framework'
+    tags:
+      - { name: console.command }
+
+  Alnv\GenaiBundle\Command\IndexFullCommand:
+    arguments:
+      - '@contao.framework'
+    tags:
+      - { name: console.command }
+
+  Alnv\GenaiBundle\Command\IndexPurgeCommand:
+    arguments:
+      - '@contao.framework'
+    tags:
+      - { name: console.command }
+
+  # HTTP Client for Ollama with Keep-Alive
+  genai.http_client:
+    class: GuzzleHttp\Client
+    arguments:
+      - timeout: 120
+        connect_timeout: 10
+        http_errors: false
+        headers:
+          Connection: 'keep-alive'
+
+  # Migrations
+  Alnv\GenaiBundle\Migration\:
+    resource: '../../Migration/'
+    tags:
+      - { name: contao.migration }

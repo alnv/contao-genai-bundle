@@ -20,6 +20,10 @@ class Ollama
     protected array $arrOptions = [];
     protected Conversation $objConversation;
 
+    // Configurable limits
+    protected int $maxContextLength = 8000;
+    protected int $topK = 10;
+
     public function __construct(Chat $objChatEntity, array $arrOptions = [])
     {
         $this->objChatEntity = $objChatEntity;
@@ -27,9 +31,14 @@ class Ollama
         $arrChatEntity = $this->objChatEntity->getChatArray();
         $this->objConfig = new OllamaConfig();
 
-        $this->objConfig->timeout = 90;
+        // Use configurable timeout, default 120s for streaming
+        $this->objConfig->timeout = (int) (Config::get('genAIOllamaTimeout') ?: 120);
         $this->objConfig->model = $arrChatEntity['model'] ?? '';
         $this->objConfig->url = $arrChatEntity['url'] ?? '';
+
+        // Configurable context limits
+        $this->maxContextLength = (int) (Config::get('genAIMaxContextLength') ?: 8000);
+        $this->topK = (int) (Config::get('genAITopK') ?: 10);
 
         $this->objConversation = new Conversation();
         $this->objConversation->startIfNot($this->arrOptions['assistant']['id'] ?? 0);
@@ -42,30 +51,28 @@ class Ollama
 
     public function getConfig(string $question, &$messages, &$sources): OllamaChat
     {
-        $this->addInstructionMessage($messages);
-
+        // 1. Get context FIRST (needed for system message)
         $arrContext = $this->getContext($question);
-        /*
-        foreach ($arrContext['metadatas'] ?? [] as $metas) {
-            foreach ($metas as $meta) {
-                $url = $meta['URL'] ?? '';
-                $sources[$url] = [
-                    'name' => $meta['TITLE'] ?? '',
-                    'url' => $meta['URL'] ?? ''
-                ];
-            }
-        }
-        */
 
+        // 2. Extract sources for frontend display
+        $sources = $this->extractSources($arrContext);
+
+        // 3. Build context block
         $strContextBlock = $this->buildContextBlock($arrContext);
 
+        // 4. System message with STATIC instructions + CONTEXT
+        // This order enables prompt caching: static part first, then dynamic context
+        $this->addSystemMessage($messages, $strContextBlock);
+
+        // 5. User question (simple, just the question)
         $objMessage = new Message();
         $objMessage->role = ChatRole::User;
         $objMessage->name = Toolkit::getUserName();
-        $objMessage->content = $this->buildFinalUserContent($strContextBlock, $question);
+        $objMessage->content = $question;
 
         $messages[] = $objMessage;
 
+        // Save user message to conversation
         $this->objConversation->addMessage([
             'content' => $question,
             'role' => ChatRole::User->value,
@@ -73,7 +80,16 @@ class Ollama
             'createdAt' => \time()
         ]);
 
-        return new OllamaChat($this->objConfig);
+        // Create chat with Ollama-specific options
+        $ollamaChat = new OllamaChat($this->objConfig);
+
+        // Set Ollama-specific options for performance
+        $ollamaChat->setModelOptions([
+            'keep_alive' => Config::get('genAIOllamaKeepAlive') ?: '5m',
+            'num_ctx' => (int) (Config::get('genAIOllamaNumCtx') ?: 4096),
+        ]);
+
+        return $ollamaChat;
     }
 
     public function ask(string $question): array
@@ -98,17 +114,56 @@ class Ollama
         return $answer;
     }
 
-    protected function addInstructionMessage(array &$messages): void
+    /**
+     * Build system message with static instructions first, then context
+     * This order enables LLM prompt caching (static prefix can be cached)
+     */
+    protected function addSystemMessage(array &$messages, string $contextBlock): void
     {
-        if (empty($this->arrOptions['assistant']['instructions'] ?? '')) {
-            return;
-        }
+        $instructions = $this->arrOptions['assistant']['instructions'] ?? '';
+
+        // Static instructions first (cacheable)
+        $systemContent = !empty($instructions)
+            ? $instructions . "\n\n"
+            : "";
+
+        // Context instructions (static template)
+        $systemContent .= "Nutze ausschließlich den folgenden Kontext, um Fragen zu beantworten. " .
+            "Wenn keine relevanten Informationen im Kontext vorhanden sind, sage dies ehrlich. " .
+            "Gib bei Antworten die Quellen-URLs an, wenn möglich.\n\n";
+
+        // Dynamic context (changes per request, but at the end)
+        $systemContent .= "### KONTEXT ###\n" . $contextBlock . "\n### ENDE KONTEXT ###";
 
         $objMessage = new Message();
-        $objMessage->content = $this->arrOptions['assistant']['instructions'];
+        $objMessage->content = $systemContent;
         $objMessage->role = ChatRole::System;
 
         $messages[] = $objMessage;
+    }
+
+    /**
+     * Extract sources from ChromaDB results for frontend display
+     * Supports both old and new metadata formats
+     */
+    protected function extractSources(array $arrContext): array
+    {
+        $sources = [];
+
+        foreach ($arrContext['metadatas'][0] ?? [] as $meta) {
+            // Support both old (uppercase) and new (lowercase) metadata keys
+            $url = $meta['url'] ?? $meta['URL'] ?? '';
+            $title = $meta['title'] ?? $meta['TITLE'] ?? '';
+
+            if ($url && !isset($sources[$url])) {
+                $sources[$url] = [
+                    'name' => $title ?: $url,
+                    'url' => $url
+                ];
+            }
+        }
+
+        return $sources;
     }
 
     protected function buildContextBlock(array $arrContext): string
@@ -118,46 +173,80 @@ class Ollama
         $metadata = $arrContext['metadatas'][0] ?? [];
 
         $totalLength = 0;
-        $maxLength = 8000;
 
         foreach ($documents as $index => $document) {
-            $url = $metadata[$index]['URL'] ?? 'Keine URL vorhanden';
+            // Support both old (uppercase) and new (lowercase) metadata keys
+            $url = $metadata[$index]['url'] ?? $metadata[$index]['URL'] ?? '';
+            $title = $metadata[$index]['title'] ?? $metadata[$index]['TITLE'] ?? '';
 
             $block = \sprintf(
-                "--- \nQuelle %d:\nText: %s\nLink/URL: %s\n",
+                "---\nQuelle %d%s:\n%s\nURL: %s\n",
                 ($index + 1),
+                $title ? " ({$title})" : '',
                 \trim($document),
-                $url
+                $url ?: 'N/A'
             );
 
-            if (($totalLength + \strlen($block)) > $maxLength) {
+            if (($totalLength + \strlen($block)) > $this->maxContextLength) {
                 break;
             }
 
             $strContext .= $block;
-            $totalLength .= \strlen($block);
+            $totalLength += \strlen($block);
         }
 
         return $strContext ?: "Kein passender Kontext in der Datenbank gefunden.";
     }
 
-    protected function buildFinalUserContent(string $strContext, string $question): string
-    {
-        return "Nutze ausschließlich den folgenden Kontext, um die Frage am Ende zu beantworten.\n\n" .
-            "### START KONTEXT ###\n" .
-            $strContext . "\n" .
-            "### ENDE KONTEXT ###\n\n" .
-            "Frage: \"" . $question . "\"\n\n";
-    }
-
     protected function getContext(string $strContext): array
     {
+        // Build filters from assistant/chat configuration
+        $filters = [];
+
+        // Root page filter for multi-site setups (includes language via root page)
+        $rootPage = $this->arrOptions['rootPage'] ?? null;
+        if (!$rootPage && !empty($this->arrOptions['assistant']['rootPage'])) {
+            $rootPage = $this->arrOptions['assistant']['rootPage'];
+        }
+        if ($rootPage) {
+            $filters['root_page'] = (string) $rootPage;
+        }
+
+        // Collection filter - only use documents from selected collections
+        $collectionIds = $this->arrOptions['assistant']['documentCollections'] ?? null;
+        if ($collectionIds) {
+            // Deserialize if stored as serialized array
+            if (is_string($collectionIds)) {
+                $collectionIds = \Contao\StringUtil::deserialize($collectionIds, true);
+            }
+            if (!empty($collectionIds)) {
+                $filters['collection_ids'] = $collectionIds;
+            }
+        }
+
+        // Get embedding configuration from selected collections
+        $embeddingConfig = $this->getEmbeddingConfigFromCollections($collectionIds);
+
         $objChroma = new ChromaDb();
         $objChroma->setOllamaEmbedding(
-            Config::get('genAIChromaDBOllamaUrl'),
-            Config::get('genAIChromaDBOllamaModel')
+            $embeddingConfig['url'],
+            $embeddingConfig['model']
         );
 
-        return $objChroma->get($strContext);
+        return $objChroma->get($strContext, $this->topK, !empty($filters) ? $filters : null);
+    }
+
+    /**
+     * Get embedding configuration from global settings
+     * 
+     * The $collectionIds parameter is retained for API compatibility but ignored.
+     * All embedding configuration is now centralized in global config.
+     */
+    protected function getEmbeddingConfigFromCollections(?array $collectionIds): array
+    {
+        return [
+            'url' => Config::get('genAIChromaDBOllamaUrl'),
+            'model' => Config::get('genAIChromaDBOllamaModel')
+        ];
     }
 }

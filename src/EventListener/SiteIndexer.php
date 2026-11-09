@@ -8,7 +8,9 @@ use Contao\CoreBundle\Search\Document;
 use Contao\CoreBundle\Search\Indexer\IndexerException;
 use Contao\CoreBundle\Search\Indexer\IndexerInterface;
 use Contao\Database;
+use Contao\StringUtil;
 use Alnv\GenaiBundle\DocumentCollectors\PageCrawler;
+use Alnv\GenaiBundle\Vectors\ChromaDb;
 
 class SiteIndexer implements IndexerInterface
 {
@@ -84,7 +86,29 @@ class SiteIndexer implements IndexerInterface
 
     public function delete(Document $document): void
     {
-        //
+        $this->framework->initialize();
+
+        $url = $document->getUri()
+            ->withFragment('')
+            ->withQuery('')
+            ->__toString();
+
+        $url = StringUtil::decodeEntities($url);
+
+        // Delete from ChromaDB
+        if (Config::get('genAIChromaDBOllamaUrl') && Config::get('genAIChromaDBOllamaModel')) {
+            $objChroma = new ChromaDb();
+            $objChroma->setOllamaEmbedding(
+                Config::get('genAIChromaDBOllamaUrl'),
+                Config::get('genAIChromaDBOllamaModel')
+            );
+            $objChroma->deleteByUrl($url);
+        }
+
+        // Delete from database
+        Database::getInstance()
+            ->prepare('DELETE FROM tl_genai_documents WHERE url=?')
+            ->execute($url);
     }
 
     public function clear(): void

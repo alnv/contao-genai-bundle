@@ -1,35 +1,23 @@
 <?php
 
-use Alnv\GenaiBundle\Vectors\ChromaDb;
-use Contao\Environment;
-use Contao\Controller;
-use Contao\Message;
 use Contao\DC_Table;
 use Contao\Config;
-use Contao\Input;
 
 $GLOBALS['TL_DCA']['tl_genai_documents'] = [
     'config' => [
         'dataContainer' => DC_Table::class,
         'backendSearchIgnore' => true,
+        'closed' => true,
         'ptable' => 'tl_genai_documents_collections',
-        'onload_callback' => [
-            function () {
-                $objChroma = new ChromaDb();
-
-                if (Input::get('resetAll')) {
-                    $objChroma->setOllamaEmbedding(Config::get('genAIChromaDBOllamaUrl'), Config::get('genAIChromaDBOllamaModel'));
-                    $objChroma->deleteAll();
-
-                    Controller::redirect(\preg_replace('/&(amp;)?resetAll=[^&]*/i', '', \preg_replace('/&(amp;)?' . \preg_quote(Input::get('resetAll'), '/') . '=[^&]*/i', '', Environment::get('request'))));
-                }
-
-                Message::addInfo('Anzahl Chunks in der Vektordatenbank: ' . $objChroma->count());
-            }
-        ],
+        'onload_callback' => [],
         'sql' => [
             'keys' => [
-                'id' => 'primary'
+                'id' => 'primary',
+                'pid' => 'index',
+                'url' => 'index',
+                'content_hash' => 'index',
+                'synced_at' => 'index',
+                'rootPageId' => 'index'
             ]
         ]
     ],
@@ -47,11 +35,6 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
         ],
         'label' => [],
         'global_operations' => [
-            'resetAll' => [
-                'href' => 'resetAll=1',
-                'class' => 'header_edit_all',
-                'attributes' => 'onclick="Backend.getScrollOffset()" accesskey="e"'
-            ],
             'all' => [
                 'href' => 'act=select',
                 'class' => 'header_edit_all',
@@ -156,6 +139,14 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
         'synced_at' => [
             'flag' => 6,
             'sorting' => true,
+            'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
+        ],
+        'content_hash' => [
+            'search' => true,
+            'sql' => "varchar(64) NOT NULL default ''"
+        ],
+        'rootPageId' => [
+            'search' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
         ]
     ]

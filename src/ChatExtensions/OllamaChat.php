@@ -31,12 +31,23 @@ class OllamaChat extends OllamaChatOrigin
         $options = [
             'base_uri' => $config->url,
             'timeout' => $config->timeout,
-            'connect_timeout' => $config->timeout,
+            'connect_timeout' => min($config->timeout, 30),
             'read_timeout' => $config->timeout,
-            'headers' => ['Authorization' => 'Basic ' . $base64Credentials]
+            'headers' => [
+                'Authorization' => 'Basic ' . $base64Credentials,
+                'Connection' => 'keep-alive'
+            ]
         ];
 
         $this->client = new Client($options);
+    }
+
+    /**
+     * Set Ollama-specific model options (keep_alive, num_ctx, etc.)
+     */
+    public function setModelOptions(array $options): void
+    {
+        $this->modelOptions = $options;
     }
 
     protected function sendRequest(string $method, string $path, array $json): ResponseInterface

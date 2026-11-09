@@ -8,8 +8,6 @@ $GLOBALS['TL_DCA']['tl_genai_documents_collections'] = [
         'enableVersioning' => true,
         'backendSearchIgnore' => true,
         'ctable' => ['tl_genai_documents'],
-        'onload_callback' => [],
-        'onsubmit_callback' => [],
         'sql' => [
             'keys' => [
                 'id' => 'primary'
@@ -45,7 +43,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents_collections'] = [
     ],
     'palettes' => [
         '__selector__' => [],
-        'default' => 'title'
+        'default' => '{title_legend},title;{filter_legend},filterRootPage'
     ],
     'subpalettes' => [],
     'fields' => [
@@ -63,6 +61,14 @@ $GLOBALS['TL_DCA']['tl_genai_documents_collections'] = [
             ],
             'search' => true,
             'sql' => "text NULL"
+        ],
+        'filterRootPage' => [
+            'inputType' => 'pageTree',
+            'eval' => [
+                'tl_class' => 'w50',
+                'fieldType' => 'radio'
+            ],
+            'sql' => ['type' => 'integer', 'unsigned' => true, 'default' => 0]
         ]
     ]
 ];

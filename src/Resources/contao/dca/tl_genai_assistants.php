@@ -40,7 +40,7 @@ $GLOBALS['TL_DCA']['tl_genai_assistants'] = [
         ]
     ],
     'palettes' => [
-        'default' => 'name;assistantName,assistantDialog,instructions;chat'
+        'default' => 'name;assistantName,assistantDialog,instructions;{rag_legend},documentCollections;chat'
     ],
     'fields' => [
         'id' => [
@@ -104,6 +104,18 @@ $GLOBALS['TL_DCA']['tl_genai_assistants'] = [
                 return $arrChats;
             },
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
+        ],
+        'documentCollections' => [
+            'inputType' => 'checkbox',
+            'foreignKey' => 'tl_genai_documents_collections.title',
+            'eval' => [
+                'multiple' => true,
+                'tl_class' => 'clr',
+                'helpwizard' => true
+            ],
+            'explanation' => 'documentCollections',
+            'relation' => ['type' => 'hasMany', 'load' => 'lazy'],
+            'sql' => 'blob NULL'
         ]
     ]
 ];
