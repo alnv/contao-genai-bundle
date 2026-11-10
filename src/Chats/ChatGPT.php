@@ -41,12 +41,21 @@ class ChatGPT
 
         $this->objConfig = new OpenAIConfig();
         $this->objConfig->model = $arrChatEntity['model'] ?? 'gpt-4o-mini';
-        $this->objConfig->apiKey = $arrChatEntity['token'] ?? '';
+        
+        // API key: use provided token or dummy for local APIs (LLPhant requires non-empty)
+        $this->objConfig->apiKey = !empty($arrChatEntity['token']) 
+            ? $arrChatEntity['token'] 
+            : 'local-api-no-key-required';
 
-        // Optional: Custom API URL (for Azure OpenAI or proxies)
-        if (!empty($arrChatEntity['url'])) {
-            $this->objConfig->url = $arrChatEntity['url'];
+        // URL: use provided URL or default to OpenAI
+        $url = !empty($arrChatEntity['url']) 
+            ? $arrChatEntity['url'] 
+            : 'https://api.openai.com/v1/';
+        // Ensure trailing slash for Guzzle path resolution
+        if (!str_ends_with($url, '/')) {
+            $url .= '/';
         }
+        $this->objConfig->url = $url;
 
         // Use configurable timeout
         $this->objConfig->timeout = (int) (Config::get('genAIOllamaTimeout') ?: 120);
@@ -74,20 +83,12 @@ class ChatGPT
      */
     public function getConfig(string $question, array &$messages, array &$sources): OpenAIChat
     {
-        // 1. Get context FIRST (needed for system message)
         $arrContext = $this->getContext($question);
-
-        // 2. Extract sources for frontend display
         $sources = $this->extractSources($arrContext);
-
-        // 3. Build context block
         $strContextBlock = $this->buildContextBlock($arrContext);
 
-        // 4. System message with STATIC instructions + CONTEXT
-        // This order enables prompt caching: static part first, then dynamic context
         $this->addSystemMessage($messages, $strContextBlock);
 
-        // 5. User question (simple, just the question)
         $objMessage = new Message();
         $objMessage->role = ChatRole::User;
         $objMessage->name = Toolkit::getUserName();
@@ -95,7 +96,6 @@ class ChatGPT
 
         $messages[] = $objMessage;
 
-        // Save user message to conversation
         $this->objConversation->addMessage([
             'content' => $question,
             'role' => ChatRole::User->value,
@@ -103,10 +103,8 @@ class ChatGPT
             'createdAt' => \time()
         ]);
 
-        // Create chat with OpenAI-specific options
         $openAIChat = new OpenAIChat($this->objConfig);
 
-        // Set model options
         $openAIChat->setModelOptions([
             'temperature' => (float) (Config::get('genAIOpenAITemperature') ?: 0.7),
             'max_tokens' => (int) (Config::get('genAIOpenAIMaxTokens') ?: 4096),

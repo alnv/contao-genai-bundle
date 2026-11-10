@@ -43,7 +43,7 @@ $GLOBALS['TL_DCA']['tl_genai_chats'] = [
         '__selector__' => ['type'],
         'default' => 'type,name',
         'ollama' => 'type,name;url,model',
-        'chatgpt' => 'type,name;token,model'
+        'chatgpt' => 'type,name;url,token,model'
     ],
     'fields' => [
         'id' => [
@@ -76,10 +76,10 @@ $GLOBALS['TL_DCA']['tl_genai_chats'] = [
         'url' => [
             'inputType' => 'text',
             'eval' => [
-                'mandatory' => true,
                 'maxlength' => 255,
                 'tl_class' => 'w50',
-                'decodeEntities' => true
+                'decodeEntities' => true,
+                'placeholder' => 'https://api.openai.com/v1'
             ],
             'search' => true,
             'sql' => ['type' => 'string', 'length' => 255, 'default' => '']
@@ -87,7 +87,6 @@ $GLOBALS['TL_DCA']['tl_genai_chats'] = [
         'token' => [
             'inputType' => 'text',
             'eval' => [
-                'mandatory' => true,
                 'maxlength' => 255,
                 'tl_class' => 'w50',
                 'decodeEntities' => true

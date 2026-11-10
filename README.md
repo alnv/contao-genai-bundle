@@ -6,18 +6,19 @@ RAG-Chatbot für Contao CMS mit lokalen LLMs (Ollama), OpenAI/ChatGPT und Chroma
 
 - 🤖 **Lokale LLMs** via Ollama (keine Cloud-Abhängigkeit, Datenschutz-konform)
 - 🌐 **OpenAI/ChatGPT** Unterstützung mit Streaming
+- 🔌 **OpenAI-kompatible APIs** — Lokale Server wie llama.cpp, LM Studio, vLLM
 - 🔍 **RAG (Retrieval Augmented Generation)** mit ChromaDB
 - ⚡ **Streaming-Antworten** via Server-Sent Events (SSE)
 - 🌐 **Multisite-fähig** mit Root-Page-Filterung
-- 📄 **Automatische Indexierung** von Seiten und Dateien
-- 🎨 **Anpassbares Widget** für das Frontend
-- 🔒 **Sicherheit**: CSRF-Schutz, Rate-Limiting, XSS-Prävention
+- 📄 **Automatische Seitenindexierung** via PageCrawler
+- 🎨 **Vue 3 Chat-Widget** für das Frontend
+- 🔒 **Sicherheit**: CSRF-Schutz, XSS-Prävention via DOMPurify
 
 ## Voraussetzungen
 
 - Contao 5.3+
 - PHP 8.2+
-- [Ollama](https://ollama.ai/) für LLM und Embeddings (oder OpenAI API)
+- [Ollama](https://ollama.ai/) für LLM und Embeddings (oder OpenAI-kompatible API)
 - [ChromaDB](https://www.trychroma.com/) für Vektorsuche
 
 ## Installation
@@ -38,11 +39,142 @@ php vendor/bin/contao-console cache:clear
 
 ---
 
+## Chat-Provider
+
+### Ollama (Lokal)
+
+Der Standard für lokale LLMs ohne Cloud-Abhängigkeit.
+
+```php
+// tl_genai_chats
+'type' => 'ollama',
+'url' => 'http://localhost:11434',
+'model' => 'qwen3:4b'
+```
+
+**Empfohlene Modelle:**
+| Modell | RAM | Beschreibung |
+|--------|-----|--------------|
+| `qwen3:4b` | ~3 GB | Schnell, gut für Deutsch |
+| `llama3.2:3b` | ~2 GB | Kompakt, effizient |
+| `mistral:7b` | ~5 GB | Ausgewogen |
+| `qwen3:14b` | ~10 GB | Beste Qualität (GPU empfohlen) |
+
+### ChatGPT/OpenAI
+
+Für OpenAI's Cloud-API.
+
+```php
+// tl_genai_chats
+'type' => 'chatgpt',
+'url' => 'https://api.openai.com/v1/',
+'token' => 'sk-...',
+'model' => 'gpt-4o-mini'
+```
+
+**Unterstützte Modelle:**
+- `gpt-4o-mini` – Schnell, günstig
+- `gpt-4o` – Beste Qualität
+- `gpt-4-turbo` – Großes Kontextfenster
+
+### Lokale KI mit OpenAI-kompatibler API
+
+Der **ChatGPT-Typ** kann als Proxy für lokale LLM-Server verwendet werden, die eine OpenAI-kompatible API bereitstellen. Das ermöglicht die Nutzung von lokalen Modellen ohne den Ollama-Overhead.
+
+**Unterstützte Server:**
+
+| Server | Standard-URL | Beschreibung |
+|--------|--------------|--------------|
+| **[Strata](https://github.com/Niko1221/Strata)** | `http://127.0.0.1:8080/v1/` | ⭐ **Empfohlen** — One-Click Install, optimiert |
+| **llama.cpp** | `http://127.0.0.1:8080/v1/` | Minimaler, schneller C++ Server |
+| **LM Studio** | `http://localhost:1234/v1/` | Desktop-App mit GUI |
+| **Ollama** (OpenAI-Modus) | `http://localhost:11434/v1/` | Ollama via OpenAI API |
+| **vLLM** | `http://localhost:8000/v1/` | Hochperformant für GPUs |
+
+> 💡 **Empfehlung:** [Strata](https://github.com/Niko1221/Strata) bietet One-Click Installation für Windows/Linux, optimierte Quantisierung (ISTA-DASLab) und läuft auf Consumer-Hardware. Ideal für Qwen3.8-Flash-Next.
+
+**Konfiguration im Backend:**
+
+| Feld | Wert |
+|------|------|
+| Typ | `chatgpt` |
+| URL | `http://127.0.0.1:8080/v1/` |
+| Token | *(leer lassen)* |
+| Modell | `qwen3.8-flash-next` (je nach Server) |
+
+> **Hinweis:** Die meisten lokalen Server benötigen kein API-Token. Das Token-Feld kann leer bleiben.
+
+**Beispiel: Strata starten**
+
+```bash
+# Strata mit Qwen3.8-Flash-Next (empfohlen)
+strata launch --family qwen3.8-flash-next --model iq3_s
+
+# Oder manuell mit llama.cpp
+./llama-server -m qwen3-8b-q4_k_m.gguf --port 8080
+```
+
+---
+
+## Hardware-Empfehlungen
+
+### Übersicht nach GPU
+
+| GPU | VRAM | Empfohlene Modelle | Quantisierung |
+|-----|------|-------------------|---------------|
+| **RTX 5090** | 32 GB | Qwen3:32b, DeepSeek-V4.1 (partial) | Q4_K_M, Q5_K_M |
+| **RTX 5080** | 16 GB | Qwen3:14b, Llama3.3:70b (partial) | Q4_K_M |
+| **RTX 4090** | 24 GB | Qwen3:14b, Mistral-Large | Q5_K_M, Q6_K |
+| **RTX 4080** | 16 GB | Qwen3:8b, Llama3.2:8b | Q4_K_M, Q5_K_M |
+| **RTX 4070** | 12 GB | Qwen3:4b, Mistral:7b | Q4_K_M |
+| **RTX 3090** | 24 GB | Qwen3:14b, Codestral | Q4_K_M, Q5_K_M |
+| **RTX 3080** | 10 GB | Qwen3:4b, Llama3.2:3b | Q4_K_S, IQ4_XS |
+| **RTX 3060** | 12 GB | Qwen3:4b, Phi-3 | Q4_K_M |
+| **Apple M4 Max** | 128 GB | DeepSeek-V4.1, Qwen3:32b | Q4_K_M |
+| **Apple M3 Pro** | 36 GB | Qwen3:14b, Codestral | Q4_K_M |
+| **Apple M2** | 16 GB | Qwen3:4b, Llama3.2:8b | Q4_K_S |
+
+### CPU-Only (ohne GPU)
+
+| RAM | Empfohlene Modelle | Hinweis |
+|-----|-------------------|---------|
+| 64 GB | Qwen3:8b, Mistral:7b | Langsam, aber nutzbar |
+| 32 GB | Qwen3:4b, Phi-3:mini | Akzeptabel für einfache Aufgaben |
+| 16 GB | Qwen3:0.6b, TinyLlama | Nur für Tests |
+
+### Quantisierung erklärt
+
+| Quantisierung | Qualität | Speicher | Empfehlung |
+|---------------|----------|----------|------------|
+| **Q8_0** | ⭐⭐⭐⭐⭐ | Hoch | Wenn VRAM reicht |
+| **Q6_K** | ⭐⭐⭐⭐⭐ | Mittel-Hoch | Guter Kompromiss |
+| **Q5_K_M** | ⭐⭐⭐⭐ | Mittel | Standard-Empfehlung |
+| **Q4_K_M** | ⭐⭐⭐⭐ | Niedrig | Beste Balance |
+| **IQ4_XS** | ⭐⭐⭐ | Sehr niedrig | Speicher knapp |
+| **IQ3_S** | ⭐⭐⭐ | Minimal | Consumer-GPUs |
+| **Q2_K** | ⭐⭐ | Minimal | Nur wenn nötig |
+
+### Strata Hardware-Matrix
+
+[Strata](https://github.com/Niko1221/Strata) optimiert automatisch für Ihre Hardware:
+
+| Hardware | Qwen3.8-Flash-Next | DeepSeek-V4.1 |
+|----------|-------------------|---------------|
+| RTX 5070 (12 GB) + 64 GB RAM | ✅ IQ3_S, 4-6 tok/s | ✅ 2.00bpw (SSD-Offload) |
+| RTX 4090 (24 GB) | ✅ Q4_K_M, 15+ tok/s | ⚠️ Partial, langsam |
+| RTX 3060 (12 GB) | ✅ IQ2_XS/IQ3_XXS | ❌ Zu groß |
+| Apple M4 Max (128 GB) | ✅ Q5_K_M, 20+ tok/s | ✅ 2.25bpw |
+| Apple M3 Pro (36 GB) | ✅ Q4_K_M | ❌ Zu wenig RAM |
+
+> **Tipp:** Für DeepSeek-V4.1 auf Consumer-Hardware benötigt Strata ~250 GB freien SSD-Speicher für Offloading
+
+---
+
 ## Ollama Modelfile
 
-Mit einem **Modelfile** können Sie ein bestehendes Ollama-Modell anpassen und optimieren. Das ist besonders nützlich für:
+Mit einem **Modelfile** können Sie ein bestehendes Ollama-Modell anpassen und optimieren.
 
-### Vorteile eines Modelfile
+### Vorteile
 
 | Vorteil | Beschreibung |
 |---------|--------------|
@@ -50,97 +182,40 @@ Mit einem **Modelfile** können Sie ein bestehendes Ollama-Modell anpassen und o
 | **Schnellerer Start** | Kein System-Prompt bei jeder Anfrage nötig |
 | **Angepasste Parameter** | Temperatur, Kontext-Größe, etc. vordefiniert |
 | **Einfache Verteilung** | Modell mit `ollama push` teilen |
-| **Persona-Definition** | Feste Rolle/Persönlichkeit des Assistenten |
 
 ### Beispiel: Deutschsprachiger Support-Assistent
 
-Erstellen Sie eine Datei `Modelfile`:
-
 ```dockerfile
-# Basis-Modell (empfohlen für Deutsch)
+# Basis-Modell
 FROM qwen3:4b
 
-# System-Prompt für den Assistenten
+# System-Prompt
 SYSTEM """
-Du bist ein freundlicher und kompetenter Kundenservice-Assistent für ein deutsches Unternehmen.
+Du bist ein freundlicher Kundenservice-Assistent für ein deutsches Unternehmen.
 
 Deine Aufgaben:
 - Beantworte Fragen basierend auf den bereitgestellten Dokumenten
-- Antworte immer auf Deutsch, auch wenn die Frage auf Englisch gestellt wird
+- Antworte immer auf Deutsch
 - Sei höflich, präzise und hilfreich
 - Wenn du etwas nicht weißt, sage es ehrlich
-- Verweise auf die Quellen, wenn du Informationen aus Dokumenten nutzt
 
 Formatierung:
 - Nutze Markdown für strukturierte Antworten
 - Verwende Listen für mehrere Punkte
-- Hebe wichtige Begriffe **fett** hervor
 """
 
-# Parameter-Optimierung
+# Parameter
 PARAMETER temperature 0.7
 PARAMETER num_ctx 8192
 PARAMETER top_p 0.9
-PARAMETER repeat_penalty 1.1
-
-# Template für Chat-Format (optional)
-TEMPLATE """
-{{- if .System }}
-<|im_start|>system
-{{ .System }}<|im_end|>
-{{- end }}
-{{- range .Messages }}
-<|im_start|>{{ .Role }}
-{{ .Content }}<|im_end|>
-{{- end }}
-<|im_start|>assistant
-"""
 ```
-
-### Modell erstellen und verwenden
 
 ```bash
-# Modell aus Modelfile erstellen
+# Modell erstellen
 ollama create mein-assistent -f Modelfile
 
-# Modell testen
+# Testen
 ollama run mein-assistent "Hallo, wer bist du?"
-
-# Modell in Contao verwenden
-# → Im Backend unter GenAI > Chats das Modell "mein-assistent" eintragen
-```
-
-### Weitere Modelfile-Beispiele
-
-#### Technischer Support
-
-```dockerfile
-FROM qwen3:4b
-
-SYSTEM """
-Du bist ein technischer Support-Spezialist. 
-Erkläre komplexe Sachverhalte verständlich.
-Gib bei Fehlern konkrete Lösungsschritte an.
-Frage nach, wenn Informationen fehlen.
-"""
-
-PARAMETER temperature 0.5
-PARAMETER num_ctx 8192
-```
-
-#### Kreativer Assistent
-
-```dockerfile
-FROM qwen3:4b
-
-SYSTEM """
-Du bist ein kreativer Schreibassistent.
-Hilf beim Verfassen von Texten, E-Mails und Inhalten.
-Passe deinen Stil an die gewünschte Zielgruppe an.
-"""
-
-PARAMETER temperature 0.9
-PARAMETER num_ctx 4096
 ```
 
 ### Nützliche Parameter
@@ -150,48 +225,37 @@ PARAMETER num_ctx 4096
 | `temperature` | 0.8 | Kreativität (0.0 = deterministisch, 1.0 = kreativ) |
 | `num_ctx` | 2048 | Kontextfenster-Größe in Tokens |
 | `top_p` | 0.9 | Nucleus Sampling |
-| `top_k` | 40 | Top-K Sampling |
 | `repeat_penalty` | 1.1 | Vermeidung von Wiederholungen |
-| `num_predict` | -1 | Max. Tokens in Antwort (-1 = unbegrenzt) |
 
 ---
 
 ## Schnellstart: Backend-Konfiguration
 
-### Schritt 1: Chat erstellen
+### 1. Chat erstellen
 
-1. Navigieren Sie zu **GenAI → Chats**
-2. Klicken Sie auf **Neu**
-3. Füllen Sie die Felder aus:
+**GenAI → Chats → Neu**
 
-| Feld | Beispielwert | Beschreibung |
-|------|--------------|--------------|
-| Name | `Ollama Qwen3` | Interner Name |
-| Typ | `ollama` | Provider-Typ |
-| URL | `http://localhost:11434` | Ollama API URL |
-| Modell | `qwen3:4b` | LLM-Modell |
+| Feld | Beispielwert |
+|------|--------------|
+| Name | `Ollama Qwen3` |
+| Typ | `ollama` |
+| URL | `http://localhost:11434` |
+| Modell | `qwen3:4b` |
 
-4. **Speichern**
+### 2. Dokument-Collection erstellen
 
-### Schritt 2: Dokument-Collection erstellen
+**GenAI → Dokumente → Neu**
 
-1. Navigieren Sie zu **GenAI → Dokumente**
-2. Klicken Sie auf **Neu** (Collection)
-3. Füllen Sie die Felder aus:
+| Feld | Beispielwert |
+|------|--------------|
+| Titel | `Website-Inhalte` |
+| Root-Page | `Meine Website [de]` |
 
-| Feld | Beispielwert | Beschreibung |
-|------|--------------|--------------|
-| Titel | `Website-Inhalte` | Name der Collection |
-| Root-Page | `Meine Website [de]` | Optional: Nur diese Seiten indexieren |
+Die Seiten werden automatisch via PageCrawler indexiert.
 
-4. **Speichern**
-5. Die Dokumente werden automatisch beim nächsten Cronjob indexiert
+### 3. Assistenten erstellen
 
-### Schritt 3: Assistenten erstellen
-
-1. Navigieren Sie zu **GenAI → Assistenten**
-2. Klicken Sie auf **Neu**
-3. Füllen Sie die Felder aus:
+**GenAI → Assistenten → Neu**
 
 | Feld | Beispielwert |
 |------|--------------|
@@ -202,151 +266,34 @@ PARAMETER num_ctx 4096
 | Dokument-Collections | ☑️ `Website-Inhalte` |
 | Chat | `Ollama Qwen3` |
 
-4. **Speichern**
+### 4. Inhaltselement anlegen
 
-### Schritt 4: Inhaltselement anlegen
-
-1. Bearbeiten Sie einen **Artikel** in Contao
-2. Fügen Sie ein neues **Inhaltselement** hinzu
-3. Wählen Sie unter **GenAI** das Element **GenAI Chat**
-4. Konfigurieren Sie:
+**Artikel → Inhaltselement → GenAI Chat**
 
 | Feld | Beispielwert |
 |------|--------------|
 | Überschrift | `Fragen Sie unseren Assistenten` |
 | Assistent | `Support-Assistent` |
-| Text | `Ich beantworte gerne Ihre Fragen.` |
 
-5. **Speichern und schließen**
-
-### Schritt 5: Indexierung starten
+### 5. Indexierung starten
 
 ```bash
-# Vollständiger Index aller Seiten
+# Vollständiger Index
 php vendor/bin/contao-console genai:index:full
 
 # Status prüfen
 php vendor/bin/contao-console genai:index:status
 ```
 
-**Fertig!** Das Chat-Widget ist jetzt auf der Seite sichtbar und einsatzbereit.
-
----
-
-## Inhaltselement: GenAI Chat
-
-Das Bundle stellt ein eigenes Contao-Inhaltselement bereit.
-
-### Im Backend
-
-1. Artikel bearbeiten → Inhaltselement hinzufügen
-2. Kategorie **GenAI** → **GenAI Chat** auswählen
-3. Assistent wählen und optional Überschrift/Text anpassen
-
-### In eigenen Templates
-
-```php
-<?php
-// In einem Contao-Template oder Modul
-use Alnv\GenaiBundle\Components\ChatComponent;
-
-echo (new ChatComponent(1, [
-    'headline' => 'Ihr KI-Assistent',
-    'text' => 'Stellen Sie mir Ihre Fragen!'
-]))->generate();
-?>
-```
-
-### Parameter
-
-| Parameter | Typ | Beschreibung |
-|-----------|-----|--------------|
-| `$assistantId` | int | ID des Assistenten aus dem Backend |
-| `headline` | string | Überschrift über dem Chat-Widget |
-| `text` | string | Beschreibungstext unter der Überschrift |
-
-### Beispiel mit dynamischer Assistent-Auswahl
-
-```php
-<?php
-// Assistent je nach Sprache
-$assistantId = $GLOBALS['TL_LANGUAGE'] === 'en' ? 2 : 1;
-
-echo (new \Alnv\GenaiBundle\Components\ChatComponent($assistantId, [
-    'headline' => $GLOBALS['TL_LANGUAGE'] === 'en' 
-        ? 'Your AI Assistant' 
-        : 'Ihr KI-Assistent',
-    'text' => ''
-]))->generate();
-?>
-```
-
 ---
 
 ## Konfiguration
 
-### Alle Config-Optionen
+### Alle Optionen
 
-Die Konfiguration erfolgt in `config/config.yml` oder `system/config/localconfig.php`:
-
-#### Ollama Server
-
-| Option | Standard | Beschreibung |
-|--------|----------|--------------|
-| `genAIOllamaUrl` | `http://localhost:11434` | Ollama API URL |
-| `genAIOllamaTimeout` | `120` | Timeout in Sekunden |
-| `genAIOllamaKeepAlive` | `5m` | Modell im RAM halten |
-| `genAIOllamaNumCtx` | `4096` | Kontextfenster-Größe |
-| `genAIOllamaEmbeddingTimeout` | `120` | Embedding-Timeout |
-
-#### ChromaDB Server
-
-| Option | Standard | Beschreibung |
-|--------|----------|--------------|
-| `genAIChromaDBUrl` | `http://localhost:8000` | ChromaDB API URL |
-| `genAIChromaDBPort` | `8000` | ChromaDB Port |
-| `genAIChromaDBCollectionName` | `genai` | Basis-Collection-Name |
-| `genAIChromaDBTenant` | `default_tenant` | ChromaDB Tenant |
-| `genAIChromaDBDatabase` | `default_database` | ChromaDB Database |
-| `genAIChromaDBToken` | – | Optional: Auth-Token |
-
-#### Embedding (Ollama)
-
-| Option | Standard | Beschreibung |
-|--------|----------|--------------|
-| `genAIChromaDBOllamaUrl` | `http://localhost:11434` | Embedding-Server URL |
-| `genAIChromaDBOllamaModel` | `bge-m3` | Embedding-Modell |
-| `genAIEmbeddingBatchSize` | `5` | Texte pro Request (gegen 413-Fehler) |
-| `genAIEmbeddingMaxTextLength` | `8000` | Max. Zeichen pro Text |
-| `genAIEmbeddingQueryPrefix` | – | Optionaler Query-Prefix |
-| `genAIEmbeddingDocumentPrefix` | – | Optionaler Document-Prefix |
-
-#### RAG-Einstellungen
-
-| Option | Standard | Beschreibung |
-|--------|----------|--------------|
-| `genAIMaxContextLength` | `8000` | Max. Kontextlänge für LLM |
-| `genAITopK` | `10` | Anzahl Suchergebnisse |
-
-#### OpenAI/ChatGPT
-
-| Option | Standard | Beschreibung |
-|--------|----------|--------------|
-| `genAIOpenAITemperature` | `0.7` | Kreativität (0.0-1.0) |
-| `genAIOpenAIMaxTokens` | `4096` | Max. Antwort-Tokens |
-
-#### Authentifizierung (optional)
-
-| Option | Beschreibung |
-|--------|--------------|
-| `aiServerUser` | Basic Auth Benutzername |
-| `aiServerPassword` | Basic Auth Passwort |
-| `aiServerHostIP` | Host-Header für Reverse Proxy |
-
-### Beispiel-Konfiguration
+Die Konfiguration erfolgt in `config/config.yml`:
 
 ```yaml
-# config/config.yml
 contao:
   localconfig:
     # Ollama Server
@@ -362,6 +309,8 @@ contao:
     # Embedding (Ollama)
     genAIChromaDBOllamaUrl: 'http://localhost:11434'
     genAIChromaDBOllamaModel: 'bge-m3'
+    genAIEmbeddingBatchSize: 5
+    genAIEmbeddingMaxTextLength: 8000
     
     # RAG
     genAIMaxContextLength: 8000
@@ -372,6 +321,34 @@ contao:
     aiServerPassword: 'password'
 ```
 
+### Optionen-Referenz
+
+#### Ollama
+
+| Option | Standard | Beschreibung |
+|--------|----------|--------------|
+| `genAIOllamaUrl` | `http://localhost:11434` | Ollama API URL |
+| `genAIOllamaTimeout` | `120` | Timeout in Sekunden |
+| `genAIOllamaKeepAlive` | `5m` | Modell im RAM halten |
+| `genAIOllamaNumCtx` | `4096` | Kontextfenster-Größe |
+
+#### ChromaDB
+
+| Option | Standard | Beschreibung |
+|--------|----------|--------------|
+| `genAIChromaDBUrl` | `http://localhost:8000` | ChromaDB API URL |
+| `genAIChromaDBCollectionName` | `genai` | Basis-Collection-Name |
+| `genAIChromaDBTenant` | `default_tenant` | ChromaDB Tenant |
+| `genAIChromaDBDatabase` | `default_database` | ChromaDB Database |
+
+#### Embedding
+
+| Option | Standard | Beschreibung |
+|--------|----------|--------------|
+| `genAIChromaDBOllamaModel` | `bge-m3` | Embedding-Modell |
+| `genAIEmbeddingBatchSize` | `5` | Texte pro Request |
+| `genAIEmbeddingMaxTextLength` | `8000` | Max. Zeichen pro Text |
+
 ---
 
 ## Console-Commands
@@ -380,11 +357,9 @@ contao:
 |---------|--------------|
 | `genai:index:status` | Status der Indexierung anzeigen |
 | `genai:index:sync` | Neue/geänderte Dokumente synchronisieren |
-| `genai:index:full` | Vollständiger Reindex aller Dokumente |
-| `genai:index:purge` | Index bereinigen (Orphans/Alle) |
+| `genai:index:full` | Vollständiger Reindex aller Seiten |
+| `genai:index:purge` | Index bereinigen |
 | `genai:warmup` | LLM/Embedding-Modelle vorwärmen |
-
-### Beispiele
 
 ```bash
 # Status anzeigen
@@ -393,48 +368,9 @@ php vendor/bin/contao-console genai:index:status
 # Vollständiger Reindex
 php vendor/bin/contao-console genai:index:full --force
 
-# Index synchronisieren (nur neue)
-php vendor/bin/contao-console genai:index:sync --limit=100
-
 # Modelle vorwärmen (Cold-Start vermeiden)
 php vendor/bin/contao-console genai:warmup
-
-# Index leeren
-php vendor/bin/contao-console genai:index:purge --all
 ```
-
----
-
-## Chat-Provider
-
-### Ollama (Lokal)
-
-```php
-// tl_genai_chats
-'type' => 'ollama',
-'url' => 'http://localhost:11434',
-'model' => 'qwen3:4b'  // oder eigenes Modelfile
-```
-
-**Empfohlene Modelle:**
-- `qwen3:4b` – Schnell, gut für Deutsch
-- `llama3.2:3b` – Kompakt, effizient
-- `mistral:7b` – Ausgewogen
-- `qwen3:14b` – Beste Qualität (GPU empfohlen)
-
-### ChatGPT/OpenAI
-
-```php
-// tl_genai_chats
-'type' => 'chatgpt',
-'url' => 'https://api.openai.com',
-'model' => 'gpt-4o-mini'
-```
-
-**Unterstützte Modelle:**
-- `gpt-4o-mini` – Schnell, günstig
-- `gpt-4o` – Beste Qualität
-- `gpt-4-turbo` – Großes Kontextfenster
 
 ---
 
@@ -450,7 +386,7 @@ php vendor/bin/contao-console genai:index:purge --all
 # Standard (empfohlen)
 ollama pull bge-m3
 
-# Beste Qualität (GPU)
+# Beste Qualität
 ollama pull qwen3-embedding:8b
 ```
 
@@ -461,7 +397,6 @@ ollama pull qwen3-embedding:8b
 ### 413 Request Entity Too Large
 
 ```php
-// localconfig.php
 $GLOBALS['TL_CONFIG']['genAIEmbeddingBatchSize'] = 1;
 $GLOBALS['TL_CONFIG']['genAIEmbeddingMaxTextLength'] = 4000;
 ```
@@ -474,9 +409,15 @@ php vendor/bin/contao-console genai:warmup
 
 ### Keine Suchergebnisse
 
-1. Index-Status prüfen: `php vendor/bin/contao-console genai:index:status`
+1. Index-Status prüfen: `genai:index:status`
 2. Bei Modellwechsel: Reindex erforderlich
 3. Collection-Filter im Assistenten prüfen
+
+### Bad Request bei lokaler KI
+
+1. URL muss mit `/` enden: `http://127.0.0.1:8080/v1/`
+2. Modellname muss zum Server passen
+3. Server-Logs prüfen
 
 ---
 
@@ -486,11 +427,6 @@ php vendor/bin/contao-console genai:warmup
 |---------|-----------|--------------|
 | `SyncVectors` | Minutely | Pending-Dokumente verarbeiten |
 | `CleanupOrphans` | Daily | Verwaiste Index-Einträge entfernen |
-
-```bash
-# Manueller Aufruf
-php vendor/bin/contao-console contao:cron
-```
 
 ---
 

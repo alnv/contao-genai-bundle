@@ -7,7 +7,7 @@ $GLOBALS['TL_LANG']['tl_genai_index']['meta_legend'] = 'Metadata';
 $GLOBALS['TL_LANG']['tl_genai_index']['date_legend'] = 'Timestamps';
 
 // Fields
-$GLOBALS['TL_LANG']['tl_genai_index']['source_type'] = ['Source type', 'Type of source (page, article, news, etc.)'];
+$GLOBALS['TL_LANG']['tl_genai_index']['source_type'] = ['Source type', 'Type of source (only page supported)'];
 $GLOBALS['TL_LANG']['tl_genai_index']['source_table'] = ['Source table', 'Name of the database table'];
 $GLOBALS['TL_LANG']['tl_genai_index']['source_id'] = ['Source ID', 'ID of the record in the source table'];
 $GLOBALS['TL_LANG']['tl_genai_index']['source_url'] = ['URL', 'URL of the source'];

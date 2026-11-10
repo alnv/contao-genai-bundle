@@ -186,75 +186,9 @@ class SyncVectors
      */
     private function getContentFromSource(array $item): ?string
     {
-        $db = Database::getInstance();
-
-        switch ($item['source_type']) {
-            case IndexQueue::TYPE_PAGE:
-                return null; // Handled by PageCrawler
-
-            case IndexQueue::TYPE_ARTICLE:
-                $article = $db->prepare('SELECT * FROM tl_article WHERE id=?')
-                    ->limit(1)
-                    ->execute($item['source_id']);
-                    
-                if (!$article->numRows) {
-                    return null;
-                }
-
-                $contents = $db->prepare('SELECT * FROM tl_content WHERE pid=? AND ptable=? ORDER BY sorting')
-                    ->execute($item['source_id'], 'tl_article');
-
-                $text = $article->title . "\n\n";
-                while ($contents->next()) {
-                    $text .= $this->extractTextFromContent($contents) . "\n";
-                }
-
-                return $text;
-
-            case IndexQueue::TYPE_NEWS:
-                $news = $db->prepare('SELECT * FROM tl_news WHERE id=?')
-                    ->limit(1)
-                    ->execute($item['source_id']);
-                    
-                if (!$news->numRows) {
-                    return null;
-                }
-
-                return $news->headline . "\n\n" . strip_tags($news->teaser ?? '') . "\n\n" . strip_tags($news->text ?? '');
-
-            case IndexQueue::TYPE_EVENT:
-                $event = $db->prepare('SELECT * FROM tl_calendar_events WHERE id=?')
-                    ->limit(1)
-                    ->execute($item['source_id']);
-                    
-                if (!$event->numRows) {
-                    return null;
-                }
-
-                return $event->title . "\n\n" . strip_tags($event->teaser ?? '') . "\n\n" . strip_tags($event->description ?? '');
-
-            default:
-                return null;
-        }
-    }
-
-    /**
-     * Extract text from content element
-     */
-    private function extractTextFromContent($content): string
-    {
-        $text = '';
-
-        if (!empty($content->headline)) {
-            $headline = \Contao\StringUtil::deserialize($content->headline, true);
-            $text .= ($headline['value'] ?? '') . "\n";
-        }
-
-        if (!empty($content->text)) {
-            $text .= strip_tags($content->text) . "\n";
-        }
-
-        return trim($text);
+        // Only pages are handled - they are processed by PageCrawler via SiteIndexer
+        // This method returns null because page content is crawled externally
+        return null;
     }
 
     /**

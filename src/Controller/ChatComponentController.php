@@ -14,14 +14,6 @@ use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
 
-/**
- * Chat Component Controller
- * 
- * Handles chat requests with:
- * - Input validation (max 4000 chars)
- * - Error masking (no internal details to frontend)
- * - SSE streaming
- */
 #[Route(path: 'gen-ai/chat-component', name: 'gen-ai-controller', defaults: ['_scope' => 'frontend'])]
 class ChatComponentController extends AbstractController
 {

@@ -50,20 +50,21 @@ class ChatComponent
     protected function buildLabels(): array
     {
         $lang = $GLOBALS['TL_LANG']['genai'] ?? [];
+        $opts = $this->arrOptions;
 
         return [
-            'placeholder' => $this->arrOptions['placeholder'] ?: ($lang['placeholder'] ?? 'Stellen Sie Ihre Frage …'),
-            'send' => $this->arrOptions['send'] ?: ($lang['send'] ?? 'Senden'),
-            'stop' => $this->arrOptions['stop'] ?: ($lang['stop'] ?? 'Stoppen'),
-            'newChat' => $this->arrOptions['newChat'] ?: ($lang['newChat'] ?? 'Neuer Chat'),
-            'copy' => $this->arrOptions['copy'] ?: ($lang['copy'] ?? 'Kopieren'),
-            'copied' => $this->arrOptions['copied'] ?: ($lang['copied'] ?? 'Kopiert!'),
-            'loading' => $this->arrOptions['loading'] ?: ($lang['loading'] ?? 'Einen Moment bitte …'),
-            'error' => $this->arrOptions['error'] ?: ($lang['error'] ?? 'Ein Fehler ist aufgetreten.'),
-            'retry' => $this->arrOptions['retry'] ?: ($lang['retry'] ?? 'Erneut versuchen'),
-            'scrollDown' => $this->arrOptions['scrollDown'] ?: ($lang['scrollDown'] ?? 'Zur neuesten Antwort'),
-            'sources' => $this->arrOptions['sources'] ?: ($lang['sources'] ?? 'Quellen'),
-            'you' => $this->arrOptions['you'] ?: ($lang['you'] ?? 'Sie'),
+            'placeholder' => ($opts['placeholder'] ?? '') ?: ($lang['placeholder'] ?? 'Stellen Sie Ihre Frage …'),
+            'send' => ($opts['send'] ?? '') ?: ($lang['send'] ?? 'Senden'),
+            'stop' => ($opts['stop'] ?? '') ?: ($lang['stop'] ?? 'Stoppen'),
+            'newChat' => ($opts['newChat'] ?? '') ?: ($lang['newChat'] ?? 'Neuer Chat'),
+            'copy' => ($opts['copy'] ?? '') ?: ($lang['copy'] ?? 'Kopieren'),
+            'copied' => ($opts['copied'] ?? '') ?: ($lang['copied'] ?? 'Kopiert!'),
+            'loading' => ($opts['loading'] ?? '') ?: ($lang['loading'] ?? 'Einen Moment bitte …'),
+            'error' => ($opts['error'] ?? '') ?: ($lang['error'] ?? 'Ein Fehler ist aufgetreten.'),
+            'retry' => ($opts['retry'] ?? '') ?: ($lang['retry'] ?? 'Erneut versuchen'),
+            'scrollDown' => ($opts['scrollDown'] ?? '') ?: ($lang['scrollDown'] ?? 'Zur neuesten Antwort'),
+            'sources' => ($opts['sources'] ?? '') ?: ($lang['sources'] ?? 'Quellen'),
+            'you' => ($opts['you'] ?? '') ?: ($lang['you'] ?? 'Sie'),
             'cancelled' => $lang['cancelled'] ?? 'Abgebrochen',
         ];
     }

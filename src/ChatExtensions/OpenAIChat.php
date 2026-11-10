@@ -27,18 +27,28 @@ class OpenAIChat extends OpenAIChatOrigin
     ) {
         parent::__construct($config, $logger);
 
+        // Ensure base URL ends with slash for proper path resolution
+        $baseUrl = $config->url ?: 'https://api.openai.com/v1/';
+        if (!str_ends_with($baseUrl, '/')) {
+            $baseUrl .= '/';
+        }
+
         // Build client options
         $options = [
-            'base_uri' => $config->url ?: 'https://api.openai.com/v1/',
+            'base_uri' => $baseUrl,
             'timeout' => $config->timeout ?? 120,
             'connect_timeout' => min($config->timeout ?? 120, 30),
             'read_timeout' => $config->timeout ?? 120,
             'headers' => [
-                'Authorization' => 'Bearer ' . $config->apiKey,
                 'Content-Type' => 'application/json',
                 'Connection' => 'keep-alive'
             ]
         ];
+
+        // Add Authorization header only if apiKey is set (local APIs often don't need it)
+        if (!empty($config->apiKey)) {
+            $options['headers']['Authorization'] = 'Bearer ' . $config->apiKey;
+        }
 
         // Add OpenAI organization header if set
         if (!empty($config->organization)) {

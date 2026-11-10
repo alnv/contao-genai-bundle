@@ -6,12 +6,12 @@ namespace Alnv\GenaiBundle\Service;
 
 use Contao\Database;
 use Contao\PageModel;
-use Contao\ArticleModel;
-use Contao\ContentModel;
 use Psr\Log\LoggerInterface;
 
 /**
  * Queue-based index management service
+ * 
+ * Only handles pages crawled by PageCrawler.
  */
 class IndexQueue
 {
@@ -22,11 +22,6 @@ class IndexQueue
     public const STATUS_DELETED = 'deleted';
 
     public const TYPE_PAGE = 'page';
-    public const TYPE_ARTICLE = 'article';
-    public const TYPE_CONTENT = 'content';
-    public const TYPE_NEWS = 'news';
-    public const TYPE_EVENT = 'event';
-    public const TYPE_FILE = 'file';
 
     private ?LoggerInterface $logger;
 
@@ -60,68 +55,6 @@ class IndexQueue
             'language' => $page->language ?: '',
             'root_page' => $page->rootId ?: 0,
             'title' => $page->title ?: '',
-        ]);
-    }
-
-    /**
-     * Queue an article for indexing
-     */
-    public function queueArticle(int $articleId, int $priority = 5): void
-    {
-        $article = ArticleModel::findByPk($articleId);
-        if (!$article) {
-            return;
-        }
-
-        // Skip unpublished articles
-        if (!$article->published) {
-            $this->markForDeletion(self::TYPE_ARTICLE, 'tl_article', $articleId);
-            return;
-        }
-
-        $page = PageModel::findByPk($article->pid);
-        
-        $this->queue([
-            'source_type' => self::TYPE_ARTICLE,
-            'source_table' => 'tl_article',
-            'source_id' => $articleId,
-            'source_url' => $page ? ($page->getFrontendUrl() ?? '') : '',
-            'priority' => $priority,
-            'language' => $page?->language ?: '',
-            'root_page' => $page?->rootId ?: 0,
-            'title' => $article->title ?: '',
-        ]);
-    }
-
-    /**
-     * Queue a content element for indexing (queues parent article)
-     */
-    public function queueContent(int $contentId, int $priority = 5): void
-    {
-        $content = ContentModel::findByPk($contentId);
-        if (!$content) {
-            return;
-        }
-
-        // Content changes trigger article reindex
-        if ($content->ptable === 'tl_article') {
-            $this->queueArticle((int) $content->pid, $priority);
-        }
-    }
-
-    /**
-     * Queue a file for indexing
-     */
-    public function queueFile(string $uuid, string $path, int $priority = 5): void
-    {
-        $this->queue([
-            'source_type' => self::TYPE_FILE,
-            'source_table' => 'tl_files',
-            'source_id' => 0, // Files use UUID
-            'source_url' => $path,
-            'priority' => $priority,
-            'title' => basename($path),
-            'content_hash' => $uuid, // Store UUID in hash for lookup
         ]);
     }
 
@@ -335,7 +268,7 @@ class IndexQueue
             return false;
         }
 
-        // Check protected pages (optional - could be configurable)
+        // Check protected pages
         if ($page->protected) {
             return false;
         }

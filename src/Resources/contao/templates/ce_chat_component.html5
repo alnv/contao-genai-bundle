@@ -546,13 +546,13 @@ $labels = $this->labels;
                              :class="['genai-chat__message', 'genai-chat__message--' + msg.role]"
                              :data-role="msg.role">
                         <div class="genai-chat__message-header">
-                            <span class="genai-chat__message-name">{{ msg.name }}</span>
+                            <span class="genai-chat__message-name">[[ msg.name ]]</span>
                             <button v-if="msg.role === 'assistant' && !msg.isStreaming"
                                     type="button" 
                                     class="genai-chat__copy-btn" 
                                     :title="labels.copy"
                                     @click="copyMessage(msg)">
-                                <span v-if="copiedMessageId === msg.id" style="font-size:12px">{{ labels.copied }}</span>
+                                <span v-if="copiedMessageId === msg.id" style="font-size:12px">[[ labels.copied ]]</span>
                                 <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
                                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
@@ -562,10 +562,10 @@ $labels = $this->labels;
                         <div class="genai-chat__message-content" v-html="msg.content"></div>
                         <div v-if="msg.sources && msg.sources.length" class="genai-chat__message-sources">
                             <details>
-                                <summary>{{ labels.sources }} ({{ msg.sources.length }})</summary>
+                                <summary>[[ labels.sources ]] ([[ msg.sources.length ]])</summary>
                                 <ul>
                                     <li v-for="(source, idx) in msg.sources" :key="idx">
-                                        <a :href="source.url" target="_blank" rel="noopener noreferrer">{{ source.name }}</a>
+                                        <a :href="source.url" target="_blank" rel="noopener noreferrer">[[ source.name ]]</a>
                                     </li>
                                 </ul>
                             </details>
@@ -589,14 +589,14 @@ $labels = $this->labels;
                 <div class="genai-chat__loading-dots">
                 <span></span><span></span><span></span>
                 </div>
-                <span class="genai-chat__loading-text">{{labels.loading}}</span>
+                <span class="genai-chat__loading-text">[[ labels.loading ]]</span>
                 </div>
 
                     <!-- Error message -->
                 <div class="genai-chat__error" v-show="errorMessage" role="alert">
-                <span class="genai-chat__error-text">{{errorMessage}}</span>
+                <span class="genai-chat__error-text">[[ errorMessage ]]</span>
                 <button type="button" class="genai-chat__error-retry" @click="retry">
-                {{labels.retry}}
+                [[ labels.retry ]]
                 </button>
                 </div>
 
@@ -618,7 +618,7 @@ $labels = $this->labels;
                 @keydown="handleKeydown"
                 ></textarea>
                 <span class="genai-chat__char-count" aria-hidden="true">
-                <span class="genai-chat__char-current">{{charCount}}</span>/4000
+                <span class="genai-chat__char-current">[[ charCount ]]</span>/4000
                 </span>
                 </div>
 
@@ -631,7 +631,7 @@ $labels = $this->labels;
                 <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
                 <path d="M3 3v5h5"/>
                 </svg>
-                <span class="genai-chat__btn-text">{{labels.newChat}}</span>
+                <span class="genai-chat__btn-text">[[ labels.newChat ]]</span>
                 </button>
 
                 <button type="submit"
@@ -672,6 +672,8 @@ $labels = $this->labels;
                 if (!mountPoint) return;
 
                 const app = createApp(createChatApp(config));
+                // Use [[ ]] instead of {{ }} to avoid Contao insert tag parsing
+                app.config.compilerOptions.delimiters = ['[[', ']]'];
                 app.mount(mountPoint);
                 container._vueApp = app;
                 container.style.opacity = '1';

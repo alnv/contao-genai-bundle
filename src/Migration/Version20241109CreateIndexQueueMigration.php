@@ -32,7 +32,7 @@ class Version20241109CreateIndexQueueMigration extends AbstractMigration
                 tstamp INT UNSIGNED NOT NULL DEFAULT 0,
                 
                 -- Source identification
-                source_type VARCHAR(32) NOT NULL DEFAULT 'page' COMMENT 'page, article, content, news, event, file',
+                source_type VARCHAR(32) NOT NULL DEFAULT 'page' COMMENT 'Only page type supported',
                 source_table VARCHAR(64) NOT NULL DEFAULT '',
                 source_id INT UNSIGNED NOT NULL DEFAULT 0,
                 source_url VARCHAR(500) NOT NULL DEFAULT '',
