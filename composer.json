@@ -2,8 +2,20 @@
   "name": "alnv/genai-bundle",
   "type": "contao-bundle",
   "license": "MIT",
-  "description": "",
-  "keywords": ["contao", "chatbot"],
+  "description": "RAG-Chatbot für Contao CMS mit lokalen LLMs (Ollama), OpenAI/ChatGPT, OpenAI-kompatiblen APIs und ChromaDB Vektorsuche.",
+  "keywords": [
+    "chatbot",
+    "ai",
+    "llm",
+    "rag",
+    "ollama",
+    "openai",
+    "chatgpt",
+    "chromadb",
+    "vector-search",
+    "embeddings",
+    "streaming"
+  ],
   "authors": [
     {
       "name": "Alexander Naumov",

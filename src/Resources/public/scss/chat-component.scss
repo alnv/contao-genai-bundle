@@ -240,6 +240,36 @@
   margin-bottom: 0;
 }
 
+/* Typing indicator (three dots) */
+.genai-chat__typing {
+  display: flex;
+  gap: 4px;
+  padding: var(--genai-spacing-xs) 0;
+}
+
+.genai-chat__typing span {
+  width: 8px;
+  height: 8px;
+  background: var(--genai-text-muted);
+  border-radius: var(--genai-radius-full);
+  animation: genai-typing 1.4s infinite ease-in-out both;
+}
+
+.genai-chat__typing span:nth-child(1) { animation-delay: -0.32s; }
+.genai-chat__typing span:nth-child(2) { animation-delay: -0.16s; }
+.genai-chat__typing span:nth-child(3) { animation-delay: 0s; }
+
+@keyframes genai-typing {
+  0%, 80%, 100% { 
+    transform: scale(0.6); 
+    opacity: 0.4; 
+  }
+  40% { 
+    transform: scale(1); 
+    opacity: 1; 
+  }
+}
+
 .genai-chat__message-content code {
   padding: 0.125rem 0.375rem;
   background: var(--genai-bg-secondary);
@@ -417,10 +447,17 @@
 
 .genai-chat__form {
   display: flex;
+  flex-direction: column;
   gap: var(--genai-spacing-sm);
   margin-top: var(--genai-spacing-md);
   padding-top: var(--genai-spacing-md);
   border-top: 1px solid var(--genai-border);
+}
+
+.genai-chat__input-row {
+  display: flex;
+  gap: var(--genai-spacing-sm);
+  align-items: flex-end;
 }
 
 .genai-chat__input-wrapper {
@@ -430,10 +467,10 @@
 
 .genai-chat__input {
   width: 100%;
-  min-height: 44px;
+  min-height: 48px;
   max-height: 200px;
   padding: var(--genai-spacing-sm) var(--genai-spacing-md);
-  padding-right: 70px;
+  padding-bottom: calc(var(--genai-spacing-sm) + 1.25rem);
   border: 1px solid var(--genai-border);
   background: var(--genai-bg);
   color: var(--genai-text);
@@ -462,11 +499,13 @@
 
 .genai-chat__char-count {
   position: absolute;
-  right: var(--genai-spacing-md);
-  bottom: var(--genai-spacing-sm);
+  right: var(--genai-spacing-sm);
+  bottom: var(--genai-spacing-xs);
   font-size: 0.75rem;
   color: var(--genai-text-muted);
   pointer-events: none;
+  background: var(--genai-bg);
+  padding: 0 var(--genai-spacing-xs);
 }
 
 /* ========================================
@@ -475,8 +514,7 @@
 
 .genai-chat__actions {
   display: flex;
-  flex-direction: column;
-  gap: var(--genai-spacing-xs);
+  justify-content: flex-end;
 }
 
 .genai-chat__btn {
@@ -499,8 +537,9 @@
 }
 
 .genai-chat__btn--send {
-  width: 44px;
-  height: 44px;
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
   background: var(--genai-primary);
   color: var(--genai-primary-text);
 }
@@ -510,11 +549,12 @@
 }
 
 .genai-chat__btn--reset {
-  height: 36px;
-  padding: 0 var(--genai-spacing-sm);
+  height: 32px;
+  padding: 0 var(--genai-spacing-md);
   background: transparent;
   color: var(--genai-text-muted);
   border: 1px solid var(--genai-border);
+  font-size: 0.8125rem;
 }
 
 .genai-chat__btn--reset:hover {
@@ -526,7 +566,7 @@
   display: none;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 480px) {
   .genai-chat__btn-text {
     display: inline;
   }
