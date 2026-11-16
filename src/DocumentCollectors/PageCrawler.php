@@ -135,6 +135,7 @@ class PageCrawler
             'url' => $url,
             'content_hash' => $contentHash,
             'synced_at' => 0, // Mark for re-embedding
+            'source_type' => 'page',
         ];
 
         $db = Database::getInstance();

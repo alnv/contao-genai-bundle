@@ -21,6 +21,12 @@ services:
     arguments:
       $logger: '@?monolog.logger.genai'
 
+  # Document Manager Service
+  Alnv\GenaiBundle\Service\DocumentManager:
+    public: true
+    arguments:
+      $logger: '@?monolog.logger.genai'
+
   # Content Change Listener (DCA callbacks)
   Alnv\GenaiBundle\EventListener\ContentChangeListener:
     arguments:

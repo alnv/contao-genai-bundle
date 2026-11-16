@@ -374,6 +374,100 @@ php vendor/bin/contao-console genai:warmup
 
 ---
 
+## Externe Dokumente (API)
+
+Der `DocumentManager` Service ermöglicht das programmatische Erstellen von Dokumenten aus externen Quellen (APIs, Datenbanken, andere Bundles).
+
+### Dokumente erstellen
+
+```php
+use Alnv\GenaiBundle\Service\DocumentManager;
+use Contao\System;
+
+$documentManager = System::getContainer()->get(DocumentManager::class);
+
+// Einzelnes Dokument erstellen
+$id = $documentManager->createDocument([
+    'title' => 'Produktdokumentation',
+    'content' => 'Der vollständige Inhalt des Dokuments...',
+    'url' => 'https://…',  // Eindeutige URL
+    'collectionId' => 1,                         // Optional: Collection ID
+    'language' => 'de',                          // Optional: Sprache
+    'sourceType' => 'external',                  // Optional: page|external
+    'sourceId' => 'product-456',                 // Optional: Externe Referenz
+    'metadata' => ['category' => 'docs']         // Optional: Metadaten
+]);
+
+// Bulk-Import
+$ids = $documentManager->bulkCreate([
+    ['title' => 'Doc 1', 'content' => '...', 'url' => 'ext://1'],
+    ['title' => 'Doc 2', 'content' => '...', 'url' => 'ext://2'],
+]);
+```
+
+### Dokumente verwalten
+
+```php
+// Aktualisieren
+$documentManager->updateDocument($id, [
+    'content' => 'Aktualisierter Inhalt',
+    'metadata' => ['version' => 2]
+]);
+
+// Löschen
+$documentManager->deleteDocument($id);
+$documentManager->deleteDocumentByUrl('https://…');
+
+// Für Re-Sync markieren (Embedding neu generieren)
+$documentManager->markForSync($id);
+$documentManager->markSourceTypeForSync('external');
+
+// Suchen
+$doc = $documentManager->getDocument($id);
+$doc = $documentManager->getDocumentByUrl('external://...');
+$docs = $documentManager->findBySourceType('external');
+$docs = $documentManager->findBySourceId('product-456');
+```
+
+### Source Types
+
+| Typ | Beschreibung |
+|-----|--------------|
+| `page` | Seiten (PageCrawler) |
+| `external` | Externe Dokumente (Standard für API) |
+
+### Hooks
+
+```php
+// config/config.php
+$GLOBALS['TL_HOOKS']['genaiOnDocumentCreated'][] = [MyListener::class, 'onCreated'];
+$GLOBALS['TL_HOOKS']['genaiOnDocumentUpdated'][] = [MyListener::class, 'onUpdated'];
+$GLOBALS['TL_HOOKS']['genaiOnDocumentDeleting'][] = [MyListener::class, 'onDeleting'];
+```
+
+```php
+// MyListener.php
+class MyListener
+{
+    public function onCreated(int $documentId, array $data): void
+    {
+        // Nach Dokument-Erstellung
+    }
+
+    public function onUpdated(int $documentId, array $data): void
+    {
+        // Nach Dokument-Update
+    }
+
+    public function onDeleting(int $documentId, array $data): void
+    {
+        // Vor Dokument-Löschung
+    }
+}
+```
+
+---
+
 ## Empfohlene Embedding-Modelle
 
 | Modell | Dim. | Größe | Deutsch | Empfehlung |

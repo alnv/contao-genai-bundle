@@ -148,6 +148,18 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
         'rootPageId' => [
             'search' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
+        ],
+        'source_type' => [
+            'filter' => true,
+            'sorting' => true,
+            'sql' => "varchar(32) NOT NULL default 'page'"
+        ],
+        'source_id' => [
+            'search' => true,
+            'sql' => "varchar(255) NOT NULL default ''"
+        ],
+        'metadata' => [
+            'sql' => "BLOB NULL"
         ]
     ]
 ];
