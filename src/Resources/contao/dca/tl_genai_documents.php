@@ -1,7 +1,7 @@
 <?php
 
+use Alnv\GenaiBundle\Backend\DocumentBackend;
 use Contao\DC_Table;
-use Contao\Config;
 
 $GLOBALS['TL_DCA']['tl_genai_documents'] = [
     'config' => [
@@ -9,7 +9,10 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
         'backendSearchIgnore' => true,
         'closed' => true,
         'ptable' => 'tl_genai_documents_collections',
+        'ctable' => ['tl_genai_documents_chunks'],
         'onload_callback' => [],
+        'ondelete_callback' => [[DocumentBackend::class, 'onDeleteDocument']],
+        'onundo_callback' => [[DocumentBackend::class, 'onUndoDocument']],
         'sql' => [
             'keys' => [
                 'id' => 'primary',
@@ -27,11 +30,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             'fields' => ['synced_at DESC'],
             'panelLayout' => 'filter,limit;sort,search',
             'headerFields' => ['title'],
-            'child_record_callback' => function ($arrRow) {
-                $synced = ($arrRow['synced_at'] ? \date(Config::get('datimFormat'), $arrRow['synced_at']) : '');
-
-                return ($arrRow['title'] ?? '-') . ($synced ? ('<span style="font-size: 10px; padding: 5px;color: #fff; background: green;border-radius: 10px;margin-left:5px;">'. $synced .'</span>') : '');
-            }
+            'child_record_callback' => [DocumentBackend::class, 'renderDocumentRow']
         ],
         'label' => [],
         'global_operations' => [
@@ -46,6 +45,19 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
                 'icon' => 'edit.svg',
                 'href' => 'act=edit'
             ],
+            'children' => [
+                'icon' => 'children.svg',
+                'href' => 'table=tl_genai_documents_chunks'
+            ],
+            'syncDocument' => [
+                'icon' => 'sync.svg',
+                'href' => 'key=syncDocument'
+            ],
+            'removeVectors' => [
+                'icon' => 'unpublished.svg',
+                'href' => 'key=removeVectors',
+                'attributes' => 'onclick="if(!confirm(\'' . ($GLOBALS['TL_LANG']['tl_genai_documents']['removeConfirm'] ?? 'Remove this document from the vector database?') . '\'))return false;Backend.getScrollOffset()"'
+            ],
             'delete' => [
                 'href' => 'act=delete',
                 'icon' => 'delete.svg',
@@ -59,7 +71,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
     ],
     'palettes' => [
         '__selector__' => [],
-        'default' => 'title;content;url,text'
+        'default' => 'title;url,language'
     ],
     'subpalettes' => [],
     'fields' => [
@@ -81,30 +93,6 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             ],
             'search' => true,
             'sql' => "text NULL"
-        ],
-        'content' => [
-            'inputType' => 'multiColumnWizard',
-            'eval' => [
-                'tl_class' => 'long clr',
-                'columnFields' => [
-                    'chunkNumber' => [
-                        'label' => ['Nummer'],
-                        'inputType' => 'text',
-                        'eval' => [
-                            'style' => 'width:15%;min-width:100%;'
-                        ]
-                    ],
-                    'formattedContent' => [
-                        'label' => ['Inhalt'],
-                        'inputType' => 'textarea',
-                        'eval' => [
-                            'style' => 'width:85%;min-width:100%;'
-                        ]
-                    ]
-                ]
-            ],
-            'search' => true,
-            'sql' => "LONGBLOB NULL"
         ],
         'url' => [
             'inputType' => 'text',
@@ -140,6 +128,19 @@ $GLOBALS['TL_DCA']['tl_genai_documents'] = [
             'flag' => 6,
             'sorting' => true,
             'sql' => ['type' => 'integer', 'notnull' => false, 'unsigned' => true, 'default' => 0]
+        ],
+        'sync_disabled' => [
+            'filter' => true,
+            'inputType' => 'checkbox',
+            'eval' => ['tl_class' => 'w50 m12'],
+            'sql' => ['type' => 'string', 'length' => 1, 'fixed' => true, 'notnull' => true, 'default' => '']
+        ],
+        'sync_error' => [
+            'sql' => ['type' => 'string', 'length' => 255, 'notnull' => true, 'default' => '']
+        ],
+        'sync_failed_at' => [
+            'flag' => 6,
+            'sql' => ['type' => 'integer', 'notnull' => true, 'unsigned' => true, 'default' => 0]
         ],
         'content_hash' => [
             'search' => true,

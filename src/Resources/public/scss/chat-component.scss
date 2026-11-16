@@ -306,6 +306,59 @@
   color: var(--genai-primary-hover);
 }
 
+.genai-chat__message-content :is(h1, h2, h3, h4, h5, h6) {
+  margin: var(--genai-spacing-md) 0 var(--genai-spacing-sm);
+  line-height: 1.3;
+}
+
+.genai-chat__message-content h1 { font-size: 1.25em; }
+.genai-chat__message-content h2 { font-size: 1.15em; }
+.genai-chat__message-content :is(h3, h4, h5, h6) { font-size: 1.05em; }
+
+.genai-chat__markdown > :first-child {
+  margin-top: 0;
+}
+
+.genai-chat__message-content blockquote {
+  margin: var(--genai-spacing-sm) 0;
+  padding: var(--genai-spacing-xs) var(--genai-spacing-md);
+  border-left: 3px solid var(--genai-border);
+  color: var(--genai-text-muted);
+}
+
+/* Tables scroll horizontally instead of breaking the bubble */
+.genai-chat__message-content table {
+  display: block;
+  max-width: 100%;
+  margin: var(--genai-spacing-sm) 0;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: var(--genai-font-size-sm);
+}
+
+.genai-chat__message-content :is(th, td) {
+  padding: var(--genai-spacing-xs) var(--genai-spacing-sm);
+  border: 1px solid var(--genai-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.genai-chat__message-content th {
+  background: var(--genai-bg-secondary);
+  font-weight: 600;
+}
+
+.genai-chat__message-content hr {
+  margin: var(--genai-spacing-md) 0;
+  border: 0;
+  border-top: 1px solid var(--genai-border);
+}
+
+/* Answer kept after a connection error */
+.genai-chat__message--interrupted {
+  border-left: 3px solid var(--genai-error-text);
+}
+
 /* ========================================
    Sources
    ======================================== */

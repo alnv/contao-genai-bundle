@@ -57,7 +57,7 @@ class IndexFullCommand extends Command
         }
 
         // Acquire lock to prevent concurrent runs
-        $lockFactory = new LockFactory(new FlockStore());
+        $lockFactory = \Alnv\GenaiBundle\Helpers\Locks::factory();
         $lock = $lockFactory->createLock('genai-index-full', 3600);
 
         if (!$lock->acquire()) {

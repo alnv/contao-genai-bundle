@@ -1,5 +1,6 @@
 <?php
 
+use Alnv\GenaiBundle\Backend\DocumentBackend;
 use Contao\DC_Table;
 
 $GLOBALS['TL_DCA']['tl_genai_documents_collections'] = [
@@ -8,6 +9,7 @@ $GLOBALS['TL_DCA']['tl_genai_documents_collections'] = [
         'enableVersioning' => true,
         'backendSearchIgnore' => true,
         'ctable' => ['tl_genai_documents'],
+        'ondelete_callback' => [[DocumentBackend::class, 'onDeleteCollection']],
         'sql' => [
             'keys' => [
                 'id' => 'primary'

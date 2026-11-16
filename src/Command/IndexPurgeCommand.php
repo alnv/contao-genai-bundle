@@ -101,26 +101,16 @@ class IndexPurgeCommand extends Command
 
     protected function purgeOrphans(ChromaDb $chroma, SymfonyStyle $io, bool $dryRun): int
     {
-        $db = Database::getInstance();
+        // Vectors whose metadata document_id no longer exists in tl_genai_documents
+        $result = $chroma->deleteOrphanedVectors($dryRun);
 
-        // Get all document IDs from database
-        $documents = $db->execute('SELECT id, pageId FROM tl_genai_documents WHERE synced_at > 0');
-        
-        $validPrefixes = [];
-        while ($documents->next()) {
-            // Both old and new ID formats
-            $validPrefixes[] = 'ID-' . $documents->id . '-';
-            $validPrefixes[] = 'page-' . ($documents->pageId ?: $documents->id) . '-chunk-';
-            $validPrefixes[] = 'file-' . ($documents->pageId ?: $documents->id) . '-chunk-';
-        }
-
-        $io->writeln('Found ' . count($validPrefixes) . ' valid document prefixes');
-        
-        // Note: ChromaDB doesn't have a native way to list all IDs efficiently
-        // This would require a custom implementation based on the ChromaDB version
-        
-        $io->note('Orphan detection requires ChromaDB metadata query support.');
-        $io->writeln('Consider running genai:index:full --force for a complete reindex.');
+        $io->writeln(\sprintf(
+            '%s %d orphaned vectors of %d deleted documents%s',
+            $dryRun ? 'Found' : 'Deleted',
+            $result['vectors'],
+            \count($result['documents']),
+            $result['documents'] ? ' (document IDs: ' . \implode(', ', \array_slice($result['documents'], 0, 20)) . ')' : ''
+        ));
 
         return Command::SUCCESS;
     }

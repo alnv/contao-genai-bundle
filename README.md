@@ -519,8 +519,32 @@ php vendor/bin/contao-console genai:warmup
 
 | Cronjob | Intervall | Beschreibung |
 |---------|-----------|--------------|
-| `SyncVectors` | Minutely | Pending-Dokumente verarbeiten |
-| `CleanupOrphans` | Daily | Verwaiste Index-Einträge entfernen |
+| `SyncVectors` | Minutely | Pending-Dokumente einbetten (`synced_at = 0`, nicht `sync_disabled`), inkrementell und fortsetzbar |
+| `CleanupOrphans` | Daily | Verwaiste Index-Einträge, Vektoren und Chunks entfernen |
+
+### Synchronisierung mit der Vektordatenbank
+
+- **Inkrementell**: Pro Chunk wird ein `chunk_hash` in den Metadaten gespeichert. Nur neue oder geänderte Chunks werden eingebettet; ein erneuter Sync eines unveränderten Dokuments erzeugt keine Embedding-Aufrufe.
+- **Fortsetzbar**: Eingebettet wird in Schritten zu 50 Chunks. Läuft das Zeitbudget ab (Web-Cron: max. 55 s und mind. 45 s Abstand zu `max_execution_time`), wird abgebrochen und beim nächsten Lauf fortgesetzt. Große Dokumente brauchen daher mehrere Läufe; `genai:index:sync` auf der Konsole läuft ohne Zeitlimit.
+- **Eindeutige IDs**: `{page|file}-{documentId}-chunk-{n}`; gelöscht wird über die Metadaten `document_id` bzw. `collection_id`, nie über andere Dokumente.
+- **Fehler** werden in `sync_error`/`sync_failed_at` gespeichert; fehlgeschlagene Dokumente rücken ans Ende der Warteschlange.
+- **Parallelität**: Pro Dokument wird ein Lock gesetzt (Backend-Button, Cronjob und CLI können dasselbe Dokument nicht gleichzeitig synchronisieren).
+
+### Backend-Aktionen (Dokumente)
+
+| Button | Wirkung |
+|--------|---------|
+| Synchronisieren (`sync.svg`) | Bettet nur dieses Dokument sofort ein (max. ~60 s, Rest übernimmt der Cronjob) und hebt „Nicht in Vektordatenbank" auf |
+| Aus Vektordatenbank entfernen | Löscht alle Vektoren des Dokuments, setzt `synced_at = 0` und `sync_disabled = 1`; der Datensatz bleibt erhalten |
+| Löschen | Entfernt zuerst die Vektoren. Ist die Vektordatenbank nicht erreichbar, wird das Löschen abgebrochen (keine verwaisten Embeddings) |
+
+Beim Löschen einer Dokumenten-Collection werden die Vektoren aller enthaltenen Dokumente entfernt; per Undo wiederhergestellte Dokumente werden neu synchronisiert.
+
+```bash
+# Verwaiste Vektoren anzeigen / entfernen
+php vendor/bin/contao-console genai:index:purge --orphans --dry-run
+php vendor/bin/contao-console genai:index:purge --orphans
+```
 
 ---
 

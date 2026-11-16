@@ -3,6 +3,7 @@
 namespace Alnv\GenaiBundle\Vectors;
 
 use Alnv\GenaiBundle\Embeddings\OllamaEmbeddings;
+use Alnv\GenaiBundle\Helpers\DocumentChunks;
 use Contao\Config;
 use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\Database;
@@ -11,6 +12,8 @@ use Contao\System;
 use HelgeSverre\Chromadb\Chromadb as ChromaDbClient;
 use HelgeSverre\Chromadb\Embeddings\EmbeddingFunction;
 use Psr\Log\LogLevel;
+use Symfony\Component\Lock\LockFactory;
+use Symfony\Component\Lock\Store\FlockStore;
 
 /**
  * ChromaDB Vector Store Integration
@@ -33,6 +36,28 @@ class ChromaDb
     // Retry configuration
     protected int $maxRetries = 3;
     protected int $retryDelayMs = 500;
+
+    /** Max IDs per delete/$in request */
+    protected const BATCH_SIZE = 100;
+
+    /**
+     * Instance with the global embedding configuration, or null if GenAI is not configured.
+     * Throws if ChromaDB itself is unreachable.
+     */
+    public static function fromConfig(): ?self
+    {
+        $ollamaUrl = Config::get('genAIChromaDBOllamaUrl');
+        $ollamaModel = Config::get('genAIChromaDBOllamaModel');
+
+        if (!$ollamaUrl || !$ollamaModel) {
+            return null;
+        }
+
+        $chroma = new self();
+        $chroma->setOllamaEmbedding($ollamaUrl, $ollamaModel);
+
+        return $chroma;
+    }
 
     public function __construct(array $arrConfig = [])
     {
@@ -106,6 +131,10 @@ class ChromaDb
                 ]
             );
             
+            if ($response->failed() || !$response->json('id')) {
+                throw new \RuntimeException('ChromaDB collection "' . $this->collectionName . '" not available: HTTP ' . $response->status() . ' ' . \mb_substr((string) $response->body(), 0, 200));
+            }
+
             $this->collectionId = $response->json('id');
         } catch (\Exception $e) {
             $this->logError('Failed to initialize collection', $e);
@@ -195,37 +224,185 @@ class ChromaDb
         });
     }
 
+    /** Chunks per embedding + upsert step (progress is persisted after each step) */
+    protected const UPSERT_STEP = 50;
+
     /**
-     * Upsert a single document with extended metadata
+     * Upsert a single document with extended metadata.
+     *
+     * Incremental: only chunks that are missing in the collection or whose text changed
+     * (metadata chunk_hash) are embedded. Upserts happen in steps; with a $deadline the
+     * method stops after the step that crossed it and throws SyncIncompleteException -
+     * the next call continues with the remaining chunks.
+     *
+     * @throws SyncIncompleteException
      */
-    public function upsertDocument(object $objDocument, ?string $contentHash = null): void
+    public function upsertDocument(object $objDocument, ?string $contentHash = null, ?float $deadline = null): void
     {
         if (!$this->embeddingFunction) {
             throw new \RuntimeException('Embedding function not set. Call setOllamaEmbedding() first.');
         }
 
+        $documentId = (int) $objDocument->id;
+
+        // Hash at read time: if the content changes while we embed, the document stays pending
+        $expectedHash = (string) ($objDocument->content_hash ?? '');
+
         $data = $this->prepareDocumentData($objDocument, $contentHash);
 
-        if (empty($data['ids'])) {
-            $this->markAsSynced($objDocument->id);
-            return;
+        // Which chunks are already embedded with identical text?
+        $existing = $this->getVectorChunkHashesByDocumentId($documentId);
+        $todo = [];
+        foreach ($data['ids'] as $i => $id) {
+            if (($existing[$id] ?? null) !== $data['metadatas'][$i]['chunk_hash']) {
+                $todo[] = $i;
+            }
         }
 
-        // Generate embeddings for all documents
-        $embeddings = $this->generateEmbeddings($data['documents']);
+        $steps = \array_chunk($todo, self::UPSERT_STEP);
+        $alreadyEmbedded = \count($data['ids']) - \count($todo);
 
-        $this->retry(function () use ($data, $embeddings) {
-            // Use upsert with pre-computed embeddings
-            $this->chromaDB->items()->upsert(
-                collectionId: $this->collectionId,
-                ids: $data['ids'],
-                embeddings: $embeddings,
-                metadatas: $data['metadatas'],
-                documents: $data['documents']
-            );
-        });
+        foreach ($steps as $stepIndex => $step) {
+            $ids = $documents = $metadatas = [];
+            foreach ($step as $i) {
+                $ids[] = $data['ids'][$i];
+                $documents[] = $data['documents'][$i];
+                $metadatas[] = $data['metadatas'][$i];
+            }
 
-        $this->markAsSynced($objDocument->id, $contentHash);
+            $embeddings = $this->generateEmbeddings($documents);
+
+            $this->retry(function () use ($ids, $documents, $metadatas, $embeddings) {
+                // Use upsert with pre-computed embeddings
+                $response = $this->chromaDB->items()->upsert(
+                    collectionId: $this->collectionId,
+                    ids: $ids,
+                    embeddings: $embeddings,
+                    metadatas: $metadatas,
+                    documents: $documents
+                );
+
+                // Saloon does not throw on HTTP errors -> never mark a failed upsert as synced
+                if ($response->failed()) {
+                    throw new \RuntimeException('ChromaDB upsert failed: HTTP ' . $response->status() . ' ' . \mb_substr((string) $response->body(), 0, 200));
+                }
+            });
+
+            $isLastStep = $stepIndex === \count($steps) - 1;
+
+            if (!$isLastStep && $deadline !== null && \microtime(true) >= $deadline) {
+                $done = $alreadyEmbedded + ($stepIndex + 1) * self::UPSERT_STEP;
+                throw new SyncIncompleteException($done, \count($data['ids']));
+            }
+        }
+
+        // Remove vectors of this document that are not part of the current chunk set
+        // (fewer chunks than before, old ID formats) -> no stale or duplicate embeddings
+        $stale = \array_values(\array_diff($this->getVectorIdsByDocumentId($documentId), $data['ids']));
+        $this->deleteVectorIds($stale);
+
+        $this->markAsSynced($documentId, $contentHash, $expectedHash);
+    }
+
+    /**
+     * Sync exactly one document (manual backend action, cronjob, CLI).
+     *
+     * - per-document lock: the same document is never synced twice in parallel
+     * - errors are stored in sync_error/sync_failed_at and re-thrown
+     *
+     * @return array{chunks: int, synced: bool} synced=false if the content changed during the sync
+     *
+     * @throws DocumentLockedException|\Throwable
+     */
+    public function syncDocument(int $documentId, bool $enable = false, ?float $deadline = null): array
+    {
+        $lock = $this->acquireDocumentLock($documentId);
+
+        try {
+            $document = Database::getInstance()
+                ->prepare('SELECT * FROM tl_genai_documents WHERE id=?')
+                ->limit(1)
+                ->execute($documentId);
+
+            if (!$document->numRows) {
+                throw new \InvalidArgumentException(\sprintf('Document ID %d does not exist.', $documentId));
+            }
+
+            if ($enable) {
+                Database::getInstance()
+                    ->prepare("UPDATE tl_genai_documents SET sync_disabled='' WHERE id=?")
+                    ->execute($documentId);
+            }
+
+            // Attempt marker: if PHP dies (time limit) the document moves to the end of the queue
+            // instead of blocking it; cleared by markAsSynced() / reset on incomplete
+            Database::getInstance()
+                ->prepare('UPDATE tl_genai_documents SET sync_failed_at=?, sync_error=? WHERE id=?')
+                ->execute(time(), 'Synchronisierung gestartet, aber nicht abgeschlossen (Zeitlimit?)', $documentId);
+
+            try {
+                $this->upsertDocument($document, null, $deadline);
+            } catch (SyncIncompleteException $e) {
+                // Regular progress: stay at the front of the queue, continue next run
+                Database::getInstance()
+                    ->prepare("UPDATE tl_genai_documents SET sync_failed_at=0, sync_error='' WHERE id=?")
+                    ->execute($documentId);
+                throw $e;
+            } catch (\Throwable $e) {
+                $this->markAsFailed($documentId, $e);
+                throw $e;
+            }
+
+            $synced = (int) Database::getInstance()
+                ->prepare('SELECT synced_at FROM tl_genai_documents WHERE id=?')
+                ->execute($documentId)
+                ->synced_at > 0;
+
+            return ['chunks' => \count($this->getVectorIdsByDocumentId($documentId)), 'synced' => $synced];
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /**
+     * Remove all vectors of one document from the collection; the DB record is kept.
+     * synced_at is reset to 0 and sync_disabled set, so the cronjob does not re-add it.
+     *
+     * @return int number of removed vectors
+     */
+    public function removeDocument(int $documentId): int
+    {
+        $lock = $this->acquireDocumentLock($documentId);
+
+        try {
+            $removed = $this->deleteByDocumentId($documentId);
+
+            Database::getInstance()
+                ->prepare("UPDATE tl_genai_documents SET synced_at=0, sync_disabled='1', sync_error='', sync_failed_at=0, tstamp=? WHERE id=?")
+                ->execute(time(), $documentId);
+
+            return $removed;
+        } finally {
+            $lock->release();
+        }
+    }
+
+    protected function acquireDocumentLock(int $documentId): \Symfony\Component\Lock\LockInterface
+    {
+        $lock = \Alnv\GenaiBundle\Helpers\Locks::factory()->createLock('genai-document-' . $documentId, 900);
+
+        if (!$lock->acquire()) {
+            throw new DocumentLockedException(\sprintf('Document ID %d is currently being synchronized.', $documentId));
+        }
+
+        return $lock;
+    }
+
+    protected function markAsFailed(int $documentId, \Throwable $e): void
+    {
+        Database::getInstance()
+            ->prepare('UPDATE tl_genai_documents SET sync_error=?, sync_failed_at=? WHERE id=?')
+            ->execute(\mb_substr($e->getMessage(), 0, 255), time(), $documentId);
     }
 
     /**
@@ -252,7 +429,7 @@ class ChromaDb
             'metadatas' => []
         ];
 
-        $arrContents = StringUtil::deserialize($objDocument->content, true);
+        $arrContents = DocumentChunks::load((int) $objDocument->id);
         $now = time();
 
         foreach ($arrContents as $index => $arrContent) {
@@ -263,10 +440,11 @@ class ChromaDb
                 continue;
             }
 
-            // Deterministic ID format: {type}-{sourceId}-chunk-{n}
+            // Deterministic, unique ID: {type}-{documentId}-chunk-{n}
+            // (pageId is not unique: the same page/PDF can exist under several URLs)
             $sourceType = $this->determineSourceType($objDocument);
             $sourceId = $objDocument->pageId ?: $objDocument->id;
-            $data['ids'][] = "{$sourceType}-{$sourceId}-chunk-{$chunkNumber}";
+            $data['ids'][] = "{$sourceType}-{$objDocument->id}-chunk-{$chunkNumber}";
             
             $data['documents'][] = $content;
             
@@ -288,6 +466,8 @@ class ChromaDb
                 
                 // Tracking
                 'content_hash' => $contentHash ?: hash('xxh3', $content),
+                // Per chunk: unchanged chunks are not embedded again
+                'chunk_hash' => hash('xxh3', $content . "\0" . ($objDocument->title ?? '') . "\0" . ($objDocument->url ?? '') . "\0" . ($objDocument->pid ?? '') . "\0" . ($objDocument->rootPageId ?? '')),
                 'indexed_at' => $now,
                 'embedding_model' => $this->embeddingModel
             ];
@@ -320,22 +500,35 @@ class ChromaDb
     /**
      * Mark document as synced in database
      */
-    protected function markAsSynced(int $documentId, ?string $contentHash = null): void
+    protected function markAsSynced(int $documentId, ?string $contentHash = null, ?string $expectedHash = null): bool
     {
         $set = [
             'tstamp' => time(),
-            'synced_at' => time()
+            'synced_at' => time(),
+            'sync_error' => '',
+            'sync_failed_at' => 0
         ];
 
         if ($contentHash) {
             $set['content_hash'] = $contentHash;
         }
 
-        Database::getInstance()
-            ->prepare('UPDATE tl_genai_documents %s WHERE id=?')
+        $query = 'UPDATE tl_genai_documents %s WHERE id=?';
+        $params = [$documentId];
+
+        // Only mark as synced if nobody changed the content meanwhile
+        if ($expectedHash !== null) {
+            $query .= ' AND content_hash=?';
+            $params[] = $expectedHash;
+        }
+
+        $result = Database::getInstance()
+            ->prepare($query)
             ->set($set)
             ->limit(1)
-            ->execute($documentId);
+            ->execute(...$params);
+
+        return $result->affectedRows > 0;
     }
 
     /**
@@ -364,35 +557,179 @@ class ChromaDb
      */
     public function addSingleDocument(object $objDocument): void
     {
-        $this->upsertDocument($objDocument);
+        $this->syncDocument((int) $objDocument->id);
     }
 
     /**
      * Delete chunks by document ID
      */
-    public function deleteByDocumentId(int $documentId): void
+    /**
+     * Delete all vectors of a document. Matches by the metadata document_id (unique), so it
+     * also works after the DB record is gone and never touches other documents. Legacy IDs
+     * without document_id metadata ("ID-{id}-{n}") are removed as well while chunks exist.
+     *
+     * @return int number of removed vectors
+     */
+    public function deleteByDocumentId(int $documentId): int
     {
-        $objDocument = Database::getInstance()
-            ->prepare('SELECT * FROM tl_genai_documents WHERE id=?')
-            ->limit(1)
-            ->execute($documentId);
+        $ids = $this->getVectorIdsByDocumentId($documentId);
 
-        if (!$objDocument->numRows) {
-            return;
+        $legacy = [];
+        foreach (DocumentChunks::loadChunkNumbers($documentId) as $chunkNumber) {
+            $legacy[] = 'ID-' . $documentId . '-' . $chunkNumber;
         }
 
-        $ids = $this->getChunkIdsForDocument($objDocument);
+        // Legacy IDs are deleted blindly (Chroma ignores unknown IDs) and not counted
+        $this->deleteVectorIds(\array_values(\array_diff($legacy, $ids)));
 
-        if (empty($ids)) {
-            return;
+        return $this->deleteVectorIds($ids);
+    }
+
+    /**
+     * Delete the vectors of several documents (by metadata document_id).
+     *
+     * @return int number of removed vectors
+     */
+    public function deleteByDocumentIds(array $documentIds): int
+    {
+        $removed = 0;
+
+        foreach (\array_chunk(\array_values(\array_unique(\array_map('intval', $documentIds))), self::BATCH_SIZE) as $batch) {
+            $where = ['document_id' => ['$in' => \array_map('strval', $batch)]];
+            $removed += $this->deleteVectorIds($this->getVectorIds($where));
         }
 
-        $this->retry(function () use ($ids) {
-            $this->chromaDB->items()->delete(
+        return $removed;
+    }
+
+    /**
+     * Delete all vectors of a document collection (tl_genai_documents_collections).
+     */
+    public function deleteByCollectionId(int $collectionId): int
+    {
+        return $this->deleteVectorIds($this->getVectorIds(['collection_id' => (string) $collectionId]));
+    }
+
+    /**
+     * @return array<string, string|null> vector id => chunk_hash (null for vectors without it)
+     */
+    protected function getVectorChunkHashesByDocumentId(int $documentId): array
+    {
+        $response = $this->retry(fn () => $this->chromaDB->items()->get(
+            collectionId: $this->collectionId,
+            ids: [],
+            include: ['metadatas'],
+            where: ['document_id' => (string) $documentId]
+        ));
+
+        if ($response->failed()) {
+            throw new \RuntimeException('ChromaDB get failed: HTTP ' . $response->status() . ' ' . \mb_substr((string) $response->body(), 0, 200));
+        }
+
+        $hashes = [];
+        foreach ($response->json('ids') ?? [] as $i => $id) {
+            $hashes[(string) $id] = $response->json('metadatas')[$i]['chunk_hash'] ?? null;
+        }
+
+        return $hashes;
+    }
+
+    /**
+     * Vector IDs stored for a document (by metadata document_id).
+     *
+     * @return array<string>
+     */
+    public function getVectorIdsByDocumentId(int $documentId): array
+    {
+        return $this->getVectorIds(['document_id' => (string) $documentId]);
+    }
+
+    /**
+     * Find vectors whose document no longer exists in tl_genai_documents and delete them.
+     *
+     * @return array{vectors: int, documents: array<string>} what was (or would be) removed
+     */
+    public function deleteOrphanedVectors(bool $dryRun = false): array
+    {
+        $valid = \array_flip(\array_map(
+            'strval',
+            Database::getInstance()->execute('SELECT id FROM tl_genai_documents')->fetchEach('id')
+        ));
+
+        $orphanIds = [];
+        $orphanDocuments = [];
+        $offset = 0;
+        $limit = 500;
+
+        do {
+            $result = $this->retry(fn () => $this->chromaDB->items()->get(
                 collectionId: $this->collectionId,
-                ids: $ids
-            );
-        });
+                ids: [],
+                include: ['metadatas'],
+                limit: $limit,
+                offset: $offset
+            )->json());
+
+            $ids = $result['ids'] ?? [];
+
+            foreach ($ids as $i => $id) {
+                $documentId = (string) ($result['metadatas'][$i]['document_id'] ?? '');
+
+                // Vectors without document_id cannot be assigned -> left alone
+                if ($documentId !== '' && !isset($valid[$documentId])) {
+                    $orphanIds[] = $id;
+                    $orphanDocuments[$documentId] = true;
+                }
+            }
+
+            $offset += $limit;
+        } while (\count($ids) === $limit);
+
+        if (!$dryRun) {
+            $this->deleteVectorIds($orphanIds);
+        }
+
+        return ['vectors' => \count($orphanIds), 'documents' => \array_map('strval', \array_keys($orphanDocuments))];
+    }
+
+    /**
+     * @return array<string>
+     */
+    protected function getVectorIds(array $where): array
+    {
+        $response = $this->retry(fn () => $this->chromaDB->items()->get(
+            collectionId: $this->collectionId,
+            ids: [],
+            include: [],
+            where: $where
+        ));
+
+        if ($response->failed()) {
+            throw new \RuntimeException('ChromaDB get failed: HTTP ' . $response->status() . ' ' . \mb_substr((string) $response->body(), 0, 200));
+        }
+
+        return \array_map('strval', $response->json('ids') ?? []);
+    }
+
+    /**
+     * @return int number of IDs sent for deletion
+     */
+    protected function deleteVectorIds(array $ids): int
+    {
+        foreach (\array_chunk($ids, self::BATCH_SIZE) as $batch) {
+            $this->retry(function () use ($batch) {
+                $response = $this->chromaDB->items()->delete(
+                    collectionId: $this->collectionId,
+                    ids: $batch
+                );
+
+                if ($response->failed()) {
+                    throw new \RuntimeException('ChromaDB delete failed: HTTP ' . $response->status() . ' ' . \mb_substr((string) $response->body(), 0, 200));
+                }
+            });
+        }
+
+        return \count($ids);
     }
 
     /**
@@ -400,14 +737,12 @@ class ChromaDb
      */
     protected function getChunkIdsForDocument(object $objDocument): array
     {
-        $arrContents = StringUtil::deserialize($objDocument->content, true);
         $ids = [];
 
         $sourceType = $this->determineSourceType($objDocument);
         $sourceId = $objDocument->pageId ?: $objDocument->id;
 
-        foreach ($arrContents as $index => $arrContent) {
-            $chunkNumber = $arrContent['chunkNumber'] ?? ($index + 1);
+        foreach (DocumentChunks::loadChunkNumbers((int) $objDocument->id) as $chunkNumber) {
             $ids[] = "{$sourceType}-{$sourceId}-chunk-{$chunkNumber}";
             
             // Also try old ID format for backwards compatibility
@@ -437,6 +772,8 @@ class ChromaDb
      */
     public function deleteAll(): void
     {
+        DocumentChunks::deleteAll();
+
         Database::getInstance()
             ->prepare('DELETE FROM tl_genai_documents')
             ->execute();

@@ -2,8 +2,10 @@
 
 namespace Alnv\GenaiBundle\Cronjobs;
 
+use Alnv\GenaiBundle\Helpers\DocumentChunks;
 use Alnv\GenaiBundle\Vectors\ChromaDb;
 use Contao\Config;
+use Contao\CoreBundle\Framework\ContaoFramework;
 use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\Database;
 use Contao\System;
@@ -21,15 +23,22 @@ class CleanupOrphans
 {
     private const LOCK_NAME = 'genai-cleanup-orphans';
 
+    public function __construct(private readonly ?ContaoFramework $framework = null)
+    {
+    }
+
     public function __invoke(): void
     {
+        // CLI cron (contao:cron) does not initialize the framework -> Config/Database unavailable
+        $this->framework?->initialize();
+
         // Check configuration
         if (!Config::get('genAIChromaDBOllamaUrl') || !Config::get('genAIChromaDBOllamaModel')) {
             return;
         }
 
         // Acquire lock
-        $lockFactory = new LockFactory(new FlockStore());
+        $lockFactory = \Alnv\GenaiBundle\Helpers\Locks::factory();
         $lock = $lockFactory->createLock(self::LOCK_NAME, 3600);
 
         if (!$lock->acquire()) {
@@ -41,6 +50,17 @@ class CleanupOrphans
             $this->cleanupOrphanedDocuments();
             $this->cleanupExpiredPages();
             $this->cleanupQueueEntries();
+
+            // Safety net: vectors of documents that were deleted while the vector DB was unreachable
+            $orphanVectors = $this->getChromaDb()->deleteOrphanedVectors();
+            if ($orphanVectors['vectors']) {
+                $this->log("Deleted {$orphanVectors['vectors']} orphaned vectors of " . \count($orphanVectors['documents']) . ' documents');
+            }
+
+            // Safety net: chunks of documents deleted without DocumentChunks (raw SQL, external code)
+            if ($deletedChunks = DocumentChunks::deleteOrphans()) {
+                $this->log("Deleted {$deletedChunks} orphaned document chunks");
+            }
         } catch (\Exception $e) {
             $this->log('Cleanup error: ' . $e->getMessage(), LogLevel::ERROR);
         } finally {
@@ -71,6 +91,7 @@ class CleanupOrphans
                 $chromaDb->deleteByDocumentId((int) $orphans->id);
 
                 // Delete from database
+                DocumentChunks::delete((int) $orphans->id);
                 $db->prepare('DELETE FROM tl_genai_documents WHERE id=?')
                     ->execute($orphans->id);
 
@@ -110,6 +131,7 @@ class CleanupOrphans
         while ($expired->next()) {
             try {
                 $chromaDb->deleteByDocumentId((int) $expired->id);
+                DocumentChunks::delete((int) $expired->id);
                 $db->prepare('DELETE FROM tl_genai_documents WHERE id=?')
                     ->execute($expired->id);
                 $deleted++;

@@ -9,7 +9,9 @@ use Contao\CoreBundle\Search\Indexer\IndexerException;
 use Contao\CoreBundle\Search\Indexer\IndexerInterface;
 use Contao\Database;
 use Contao\StringUtil;
+use Contao\System;
 use Alnv\GenaiBundle\DocumentCollectors\PageCrawler;
+use Alnv\GenaiBundle\Helpers\DocumentChunks;
 use Alnv\GenaiBundle\Vectors\ChromaDb;
 
 class SiteIndexer implements IndexerInterface
@@ -106,6 +108,8 @@ class SiteIndexer implements IndexerInterface
         }
 
         // Delete from database
+        DocumentChunks::deleteByDocumentUrl($url);
+
         Database::getInstance()
             ->prepare('DELETE FROM tl_genai_documents WHERE url=?')
             ->execute($url);
@@ -113,7 +117,22 @@ class SiteIndexer implements IndexerInterface
 
     public function clear(): void
     {
+        // Remove the embeddings of the documents that are deleted below (no orphans)
+        if (Config::get('genAIChromaDBOllamaUrl') && Config::get('genAIChromaDBOllamaModel')) {
+            $ids = Database::getInstance()->prepare('SELECT id FROM tl_genai_documents WHERE pageId!=?')->execute('')->fetchEach('id');
+
+            try {
+                ChromaDb::fromConfig()?->deleteByDocumentIds($ids);
+            } catch (\Throwable $e) {
+                // Do not abort the search index rebuild; CleanupOrphans removes leftover vectors
+                System::getContainer()->get('monolog.logger.contao')->warning(
+                    '[GenAI] Could not delete vectors on search index clear, CleanupOrphans will remove them: ' . $e->getMessage()
+                );
+            }
+        }
+
         Database::getInstance()->prepare('DELETE FROM tl_genai_documents WHERE pageId!=?')->execute('');
+        DocumentChunks::deleteOrphans();
     }
 
     private function throwBecause(string $message, bool $onlyWarning = true): void

@@ -28,8 +28,11 @@ ArrayUtil::arrayInsert($GLOBALS['BE_MOD'], 3, [
             'name' => 'documents',
             'tables' => [
                 'tl_genai_documents_collections',
-                'tl_genai_documents'
-            ]
+                'tl_genai_documents',
+                'tl_genai_documents_chunks'
+            ],
+            'syncDocument' => [\Alnv\GenaiBundle\Backend\DocumentBackend::class, 'syncDocument'],
+            'removeVectors' => [\Alnv\GenaiBundle\Backend\DocumentBackend::class, 'removeVectors']
         ],
         'genai-index' => [
             'name' => 'index',

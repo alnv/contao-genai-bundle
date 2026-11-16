@@ -22,6 +22,7 @@ class IndexQueue
     public const STATUS_DELETED = 'deleted';
 
     public const TYPE_PAGE = 'page';
+    public const TYPE_FILE = 'file';
 
     private ?LoggerInterface $logger;
 

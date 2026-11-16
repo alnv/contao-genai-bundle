@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Alnv\GenaiBundle\Service;
 
+use Alnv\GenaiBundle\Helpers\DocumentChunks;
+use Alnv\GenaiBundle\Vectors\ChromaDb;
 use Contao\Database;
 use Contao\StringUtil;
 use Psr\Log\LoggerInterface;
@@ -49,7 +51,6 @@ class DocumentManager
             'pid' => $collectionId,
             'tstamp' => $now,
             'title' => $data['title'],
-            'content' => serialize($content),
             'url' => $data['url'],
             'language' => $data['language'] ?? '',
             'source_type' => $data['sourceType'] ?? self::SOURCE_EXTERNAL,
@@ -70,6 +71,10 @@ class DocumentManager
                 ->set($documentData)
                 ->execute($existing->id);
 
+            if ($existing->content_hash !== $contentHash || !DocumentChunks::count((int) $existing->id)) {
+                DocumentChunks::save((int) $existing->id, $content);
+            }
+
             $this->logger->info("Updated external document: {$data['url']} (ID: {$existing->id})");
             return (int) $existing->id;
         }
@@ -78,11 +83,13 @@ class DocumentManager
         $documentData['created_at'] = $now;
         $documentData['synced_at'] = 0;
 
-        $db->prepare('INSERT INTO tl_genai_documents %s')
+        // Database has no insertId, only the executed statement (Database->insertId was always null)
+        $id = (int) $db->prepare('INSERT INTO tl_genai_documents %s')
             ->set($documentData)
-            ->execute();
+            ->execute()
+            ->insertId;
+        DocumentChunks::save($id, $content);
 
-        $id = (int) $db->insertId;
         $this->logger->info("Created external document: {$data['url']} (ID: {$id})");
 
         // Dispatch hook
@@ -99,7 +106,7 @@ class DocumentManager
         $db = Database::getInstance();
         $now = time();
 
-        $existing = $db->prepare('SELECT * FROM tl_genai_documents WHERE id=?')
+        $existing = $db->prepare('SELECT id FROM tl_genai_documents WHERE id=?')
             ->limit(1)
             ->execute($id);
 
@@ -107,6 +114,7 @@ class DocumentManager
             return false;
         }
 
+        $chunks = null;
         $updateData = ['tstamp' => $now, 'updated_at' => $now];
 
         if (isset($data['title'])) {
@@ -114,9 +122,8 @@ class DocumentManager
         }
 
         if (isset($data['content'])) {
-            $content = $this->prepareContent($data['content']);
-            $updateData['content'] = serialize($content);
-            $updateData['content_hash'] = md5(serialize($content));
+            $chunks = $this->prepareContent($data['content']);
+            $updateData['content_hash'] = md5(serialize($chunks));
             $updateData['synced_at'] = 0; // Reset sync status
         }
 
@@ -135,6 +142,10 @@ class DocumentManager
         $db->prepare('UPDATE tl_genai_documents %s WHERE id=?')
             ->set($updateData)
             ->execute($id);
+
+        if ($chunks !== null) {
+            DocumentChunks::save($id, $chunks);
+        }
 
         $this->logger->info("Updated document ID: {$id}");
         $this->dispatchHook('onDocumentUpdated', $id, $data);
@@ -158,6 +169,16 @@ class DocumentManager
         }
 
         $this->dispatchHook('onDocumentDeleting', $id, ['url' => $existing->url]);
+
+        // Remove the embeddings first. If the vector DB is unreachable the record is still
+        // deleted (API contract); the leftover vectors are removed by CleanupOrphans.
+        try {
+            ChromaDb::fromConfig()?->deleteByDocumentId($id);
+        } catch (\Throwable $e) {
+            $this->logger->warning("Could not delete vectors of document {$id}, CleanupOrphans will remove them: {$e->getMessage()}");
+        }
+
+        DocumentChunks::delete($id);
 
         $db->prepare('DELETE FROM tl_genai_documents WHERE id=?')
             ->execute($id);
@@ -362,11 +383,11 @@ class DocumentManager
     }
 
     /**
-     * Hydrate document row with unserialized data.
+     * Hydrate document row with chunks and unserialized metadata.
      */
     private function hydrateDocument(array $row): array
     {
-        $row['content'] = StringUtil::deserialize($row['content'], true);
+        $row['content'] = DocumentChunks::load((int) $row['id']);
         $row['metadata'] = !empty($row['metadata']) ? StringUtil::deserialize($row['metadata'], true) : [];
         return $row;
     }

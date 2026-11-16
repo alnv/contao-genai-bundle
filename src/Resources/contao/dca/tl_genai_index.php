@@ -76,7 +76,9 @@ $GLOBALS['TL_DCA']['tl_genai_index'] = [
             'filter' => true,
             'sorting' => true,
             'inputType' => 'select',
-            'options' => ['page', 'article', 'content', 'news', 'event', 'file'],
+            // Only pages (crawled by SiteIndexer) and files (PDFs) are indexed
+            'options' => ['page', 'file'],
+            'reference' => &$GLOBALS['TL_LANG']['tl_genai_index']['source_types'],
             'eval' => ['tl_class' => 'w50'],
             'sql' => ['type' => 'string', 'length' => 32, 'default' => 'page']
         ],

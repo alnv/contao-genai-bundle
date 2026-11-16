@@ -7,7 +7,8 @@ $GLOBALS['TL_LANG']['tl_genai_index']['meta_legend'] = 'Metadaten';
 $GLOBALS['TL_LANG']['tl_genai_index']['date_legend'] = 'Zeitstempel';
 
 // Fields
-$GLOBALS['TL_LANG']['tl_genai_index']['source_type'] = ['Quelltyp', 'Art der Quelle (nur Seite unterstützt)'];
+$GLOBALS['TL_LANG']['tl_genai_index']['source_type'] = ['Quelltyp', 'Art der Quelle: Seite oder Datei.'];
+$GLOBALS['TL_LANG']['tl_genai_index']['source_types'] = ['page' => 'Seite', 'file' => 'Datei'];
 $GLOBALS['TL_LANG']['tl_genai_index']['source_table'] = ['Quelltabelle', 'Name der Datenbanktabelle'];
 $GLOBALS['TL_LANG']['tl_genai_index']['source_id'] = ['Quell-ID', 'ID des Datensatzes in der Quelltabelle'];
 $GLOBALS['TL_LANG']['tl_genai_index']['source_url'] = ['URL', 'URL der Quelle'];

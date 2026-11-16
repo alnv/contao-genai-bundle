@@ -2,9 +2,13 @@
 
 namespace Alnv\GenaiBundle\Cronjobs;
 
+use Alnv\GenaiBundle\Helpers\DocumentChunks;
 use Alnv\GenaiBundle\Service\IndexQueue;
 use Alnv\GenaiBundle\Vectors\ChromaDb;
+use Alnv\GenaiBundle\Vectors\DocumentLockedException;
+use Alnv\GenaiBundle\Vectors\SyncIncompleteException;
 use Contao\Config;
+use Contao\CoreBundle\Framework\ContaoFramework;
 use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\Database;
 use Contao\System;
@@ -13,10 +17,13 @@ use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Lock\Store\FlockStore;
 
 /**
- * Cronjob for processing the index queue
- * 
- * Processes pending items from tl_genai_index in batches.
- * Uses file-based locking to prevent concurrent runs.
+ * Cronjob: embeds pending documents and processes the index queue
+ *
+ * 1. Deletions from tl_genai_index
+ * 2. Queue items from tl_genai_index
+ * 3. Pending documents in tl_genai_documents (synced_at=0, not sync_disabled)
+ *
+ * Uses file-based locking to prevent concurrent runs (plus a per-document lock in ChromaDb).
  * Uses global embedding configuration.
  */
 class SyncVectors
@@ -29,8 +36,15 @@ class SyncVectors
     private ?ChromaDb $chromaDb = null;
     private float $startTime;
 
+    public function __construct(private readonly ?ContaoFramework $framework = null)
+    {
+    }
+
     public function __invoke(): void
     {
+        // CLI cron (contao:cron) does not initialize the framework -> Config/Database unavailable
+        $this->framework?->initialize();
+
         // Check global configuration
         $ollamaUrl = Config::get('genAIChromaDBOllamaUrl');
         $ollamaModel = Config::get('genAIChromaDBOllamaModel');
@@ -41,7 +55,7 @@ class SyncVectors
         }
 
         // Acquire lock
-        $lockFactory = new LockFactory(new FlockStore());
+        $lockFactory = \Alnv\GenaiBundle\Helpers\Locks::factory();
         $lock = $lockFactory->createLock(self::LOCK_NAME, 300);
 
         if (!$lock->acquire()) {
@@ -55,6 +69,7 @@ class SyncVectors
             $this->initServices($ollamaUrl, $ollamaModel);
             $this->processDeletions();
             $this->processPending();
+            $this->processPendingDocuments();
         } catch (\Exception $e) {
             $this->log('Sync error: ' . $e->getMessage(), LogLevel::ERROR);
         } finally {
@@ -90,7 +105,9 @@ class SyncVectors
                     $this->chromaDb->deleteByUrl($item['source_url']);
                 }
 
-                // Delete from tl_genai_documents
+                // Delete chunks + document from tl_genai_documents
+                DocumentChunks::deleteByDocumentUrl((string) $item['source_url']);
+
                 Database::getInstance()
                     ->prepare('DELETE FROM tl_genai_documents WHERE url=?')
                     ->execute($item['source_url']);
@@ -132,6 +149,63 @@ class SyncVectors
         if ($processed > 0) {
             $this->log("Processed {$processed} items");
         }
+    }
+
+    /**
+     * Embed documents that are waiting for synchronization (synced_at=0).
+     *
+     * Failed documents are moved to the end of the queue (sync_failed_at) so that one broken
+     * document does not block all others; each document is tried at most once per run.
+     *
+     * @return array{synced: int, failed: int, skipped: int}
+     */
+    public function processPendingDocuments(?int $limit = null): array
+    {
+        $stats = ['synced' => 0, 'failed' => 0, 'skipped' => 0, 'partial' => 0];
+        $tried = [0];
+        $db = Database::getInstance();
+
+        while (!$this->isTimeExceeded() && ($limit === null || \array_sum($stats) < $limit)) {
+            $ids = $db->prepare(
+                "SELECT id FROM tl_genai_documents
+                 WHERE synced_at=0 AND tstamp>0 AND sync_disabled='' AND id NOT IN (" . \implode(',', $tried) . ")
+                 ORDER BY sync_failed_at ASC, tstamp ASC"
+            )->limit(self::BATCH_SIZE)->execute()->fetchEach('id');
+
+            if (!$ids) {
+                break;
+            }
+
+            foreach ($ids as $id) {
+                if ($this->isTimeExceeded() || ($limit !== null && \array_sum($stats) >= $limit)) {
+                    break 2;
+                }
+
+                $tried[] = (int) $id;
+
+                try {
+                    $result = $this->chromaDb->syncDocument((int) $id, false, $this->getDeadline());
+                    $result['synced'] ? $stats['synced']++ : $stats['skipped']++;
+                } catch (SyncIncompleteException $e) {
+                    // Large document: progress is stored, the next run continues
+                    $stats['partial']++;
+                    $this->log("Document {$id}: {$e->getMessage()}");
+                    break 2;
+                } catch (DocumentLockedException $e) {
+                    $stats['skipped']++;
+                } catch (\Throwable $e) {
+                    // Error is stored on the document by ChromaDb::syncDocument()
+                    $stats['failed']++;
+                    $this->log("Failed to sync document {$id}: {$e->getMessage()}", LogLevel::WARNING);
+                }
+            }
+        }
+
+        if ($stats['synced'] || $stats['failed']) {
+            $this->log("Documents synced: {$stats['synced']}, failed: {$stats['failed']}, skipped: {$stats['skipped']}, partial: {$stats['partial']}");
+        }
+
+        return $stats;
     }
 
     /**
@@ -211,7 +285,6 @@ class SyncVectors
             'url' => $item['source_url'],
             'pageId' => $item['source_id'],
             'rootPageId' => $item['root_page'],
-            'content' => serialize($chunks),
             'content_hash' => $contentHash,
             'synced_at' => 0,
         ];
@@ -220,13 +293,18 @@ class SyncVectors
             $db->prepare('UPDATE tl_genai_documents %s WHERE id=?')
                 ->set($data)
                 ->execute($existing->id);
+            DocumentChunks::save((int) $existing->id, $chunks);
+
             return (int) $existing->id;
         }
 
-        $db->prepare('INSERT INTO tl_genai_documents %s')
+        $id = (int) $db->prepare('INSERT INTO tl_genai_documents %s')
             ->set($data)
-            ->execute();
-        return (int) $db->insertId;
+            ->execute()
+            ->insertId;
+        DocumentChunks::save($id, $chunks);
+
+        return $id;
     }
 
     /**
@@ -281,7 +359,24 @@ class SyncVectors
      */
     private function isTimeExceeded(): bool
     {
-        return (microtime(true) - $this->startTime) >= self::TIME_LIMIT_SECONDS;
+        return microtime(true) >= $this->getDeadline();
+    }
+
+    /**
+     * Own budget (TIME_LIMIT_SECONDS), but never closer than 45s to PHP's max_execution_time
+     * of the current request: the web cron shares the request with other cronjobs.
+     */
+    private function getDeadline(): float
+    {
+        $deadline = $this->startTime + self::TIME_LIMIT_SECONDS;
+        $maxExecution = (int) \ini_get('max_execution_time');
+
+        if ($maxExecution > 0) {
+            $requestStart = (float) ($_SERVER['REQUEST_TIME_FLOAT'] ?? $this->startTime);
+            $deadline = \min($deadline, $requestStart + $maxExecution - 45);
+        }
+
+        return $deadline;
     }
 
     /**

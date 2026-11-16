@@ -3,6 +3,7 @@
 namespace Alnv\GenaiBundle\DocumentCollectors;
 
 use Alnv\GenaiBundle\DataReader\TextDataReader;
+use Alnv\GenaiBundle\Helpers\DocumentChunks;
 use Contao\Config;
 use Contao\CoreBundle\Monolog\ContaoContext;
 use Contao\CoreBundle\Search\Document;
@@ -18,41 +19,41 @@ use Symfony\Component\DomCrawler\Crawler;
 
 /**
  * PageCrawler - Extracts and indexes content from Contao pages
- * 
+ *
  * Processes HTML content from Contao's search indexer, splits it into chunks,
  * and stores it in tl_genai_documents for later embedding.
  */
 class PageCrawler
 {
     protected Crawler $objCrawler;
-    
+
     /** @var array<string, true> Track processed URLs to avoid duplicates */
     protected static array $processedUrls = [];
-    
+
     /** @var array<string, true> Track processed PDFs per request */
     protected array $processedPdfs = [];
 
     public function __construct(Document $document, array $arrMeta = [])
     {
         $strHtml = $document->getBody();
-        
+
         // Normalize and validate URL
         $url = $this->normalizeUrl($document->getUri());
-        
+
         if ($url === null) {
             $this->log("Invalid URL, skipping: " . $document->getUri()->__toString(), LogLevel::WARNING);
             return;
         }
-        
+
         // Check for duplicate processing within same request
         if (isset(self::$processedUrls[$url])) {
             return;
         }
         self::$processedUrls[$url] = true;
-        
+
         $strTitle = $arrMeta['title'] ?? '';
         $strContent = $this->parseContent($strHtml);
-        
+
         // Skip empty content
         if (trim($strContent) === '') {
             $this->log("Empty content for page: {$url}", LogLevel::DEBUG);
@@ -64,7 +65,7 @@ class PageCrawler
             'sourceName' => $strTitle,
             'id' => $arrMeta['pageId'] ?? ''
         ]))->getDocuments();
-        
+
         $arrSplitDocuments = DocumentSplitter::splitDocuments($arrDocuments, 800, '.', 60);
         $arrFormattedDocuments = EmbeddingFormatter::formatEmbeddings($arrSplitDocuments);
 
@@ -88,16 +89,16 @@ class PageCrawler
                 ->__toString();
 
             $url = StringUtil::decodeEntities($url);
-            
+
             // Remove trailing slashes for consistency
             $url = rtrim($url, '/');
-            
+
             // Validate URL structure
             $parsed = parse_url($url);
             if (!isset($parsed['host'])) {
                 return null;
             }
-            
+
             return $url;
         } catch (\Throwable $e) {
             return null;
@@ -128,7 +129,6 @@ class PageCrawler
             'updated_at' => time(),
             'pid' => $collectionId,
             'title' => $arrMeta['title'] ?? '',
-            'content' => serialize($arrContent),
             'pageId' => $arrMeta['pageId'] ?? '',
             'rootPageId' => $arrMeta['rootPageId'] ?? 0,
             'language' => $arrMeta['language'] ?? '',
@@ -146,9 +146,12 @@ class PageCrawler
         if (!$existing->numRows) {
             // New document
             $arrSet['created_at'] = time();
-            $db->prepare('INSERT INTO tl_genai_documents %s')
+            $insertId = (int)$db->prepare('INSERT INTO tl_genai_documents %s')
                 ->set($arrSet)
-                ->execute();
+                ->execute()
+                ->insertId;
+
+            DocumentChunks::save($insertId, $arrContent);
         } else {
             // Update only if content changed
             if ($existing->content_hash !== $contentHash) {
@@ -156,10 +159,18 @@ class PageCrawler
                     ->limit(1)
                     ->set($arrSet)
                     ->execute($existing->id);
+
+                DocumentChunks::save((int)$existing->id, $arrContent);
             } else {
                 // Content unchanged, just update timestamp
                 $db->prepare('UPDATE tl_genai_documents SET tstamp=?, updated_at=? WHERE id=?')
                     ->execute(time(), time(), $existing->id);
+
+                // Self-heal documents without chunks (e.g. chunks deleted manually)
+                if (!DocumentChunks::count((int)$existing->id)) {
+                    DocumentChunks::save((int)$existing->id, $arrContent);
+                    DocumentChunks::markDocumentForSync((int)$existing->id);
+                }
             }
         }
     }
@@ -170,15 +181,15 @@ class PageCrawler
     protected function getDefaultCollectionId(): int
     {
         static $defaultId = null;
-        
+
         if ($defaultId === null) {
             $collection = Database::getInstance()
                 ->execute('SELECT id FROM tl_genai_documents_collections ORDER BY id ASC')
                 ->fetchAssoc();
-            
-            $defaultId = $collection ? (int) $collection['id'] : 1;
+
+            $defaultId = $collection ? (int)$collection['id'] : 1;
         }
-        
+
         return $defaultId;
     }
 
@@ -236,16 +247,16 @@ class PageCrawler
             }
 
             $fullPath = $rootDir . '/' . $fileModel->path;
-            
+
             // Validate file exists and is readable
             if (!is_file($fullPath) || !is_readable($fullPath)) {
                 $this->log("PDF not readable: {$fileModel->path}", LogLevel::WARNING);
                 continue;
             }
 
-            // Check file size (skip files > 50MB)
+            // Check file size (skip files > 5MB)
             $fileSize = filesize($fullPath);
-            if ($fileSize > 50 * 1024 * 1024) {
+            if ($fileSize > 5 * 1024 * 1024) {
                 $this->log("PDF too large ({$fileSize} bytes): {$fileModel->path}", LogLevel::INFO);
                 continue;
             }
@@ -287,13 +298,13 @@ class PageCrawler
 
         // Remove script tags
         $strContent = $this->removeTagContent($strContent, 'script');
-        
+
         // Remove style tags
         $strContent = $this->removeTagContent($strContent, 'style');
-        
+
         // Remove noscript
         $strContent = $this->removeTagContent($strContent, 'noscript');
-        
+
         // Remove nav elements (typically navigation, not content)
         $strContent = $this->removeTagContent($strContent, 'nav');
 
@@ -308,7 +319,7 @@ class PageCrawler
         } else {
             $strBody = $strContent;
         }
-        
+
         // Add spaces around block elements for better separation
         $strBody = str_ireplace(
             ['<br', '><', '</p>', '</div>', '</li>', '</h1>', '</h2>', '</h3>', '</h4>', '</h5>', '</h6>'],
@@ -318,10 +329,10 @@ class PageCrawler
 
         // Strip remaining HTML tags
         $text = strip_tags($strBody);
-        
+
         // Normalize multiple spaces
         $text = preg_replace('/\s+/', ' ', $text);
-        
+
         return trim($text);
     }
 

@@ -4,8 +4,8 @@
  *
  * Features:
  * - Vue 3 Composition API via CDN
- * - SSE streaming
- * - Markdown rendering via marked.js + DOMPurify
+ * - SSE streaming, rendered live while tokens arrive (batched per animation frame)
+ * - Streaming-safe Markdown rendering via genai-markdown.js (marked.js + DOMPurify)
  * - Auto-scroll with user detection
  * - Server-side conversation history (tl_genai_conversations)
  * - Multiple instances support
@@ -52,96 +52,32 @@ $labels = $this->labels;
     (function () {
 
         const {createApp, ref, computed, onMounted, nextTick, watch} = Vue;
+        const MD = window.GenAIMarkdown;
 
         /**
-         * Parse Markdown using marked.js and sanitize with DOMPurify
+         * Markdown -> sanitized HTML. streaming=true repairs unfinished Markdown (open code fences,
+         * emphasis, half-typed links/tables); the final render uses the unmodified text.
          */
-        const parseMarkdown = (text) => {
-            if (!text) return '';
-
-            if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
-                try {
-                    marked.setOptions({
-                        gfm: true,
-                        breaks: true,
-                        pedantic: false,
-                        headerIds: false,
-                        mangle: false,
-                    });
-
-                    const rawHtml = marked.parse(text);
-                    const cleanHtml = DOMPurify.sanitize(rawHtml, {
-                        ALLOWED_TAGS: [
-                            'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                            'p', 'br', 'hr',
-                            'ul', 'ol', 'li',
-                            'strong', 'em', 'b', 'i', 'u', 's', 'del',
-                            'a', 'code', 'pre',
-                            'blockquote', 'q',
-                            'table', 'thead', 'tbody', 'tr', 'th', 'td',
-                            'img', 'figure', 'figcaption',
-                            'span', 'div', 'sup', 'sub'
-                        ],
-                        ALLOWED_ATTR: [
-                            'href', 'target', 'rel', 'title', 'alt', 'src',
-                            'class', 'id', 'colspan', 'rowspan', 'align'
-                        ],
-                        ALLOW_DATA_ATTR: false,
-                        FORBID_TAGS: ['script', 'style', 'iframe', 'form', 'input', 'button', 'object', 'embed'],
-                        FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'style'],
-                    });
-
-                    // Add target="_blank" and rel="noopener" to external links
-                    const tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = cleanHtml;
-                    tempDiv.querySelectorAll('a[href]').forEach(link => {
-                        if (link.href && !link.href.startsWith(window.location.origin)) {
-                            link.setAttribute('target', '_blank');
-                            link.setAttribute('rel', 'noopener noreferrer');
-                        }
-                    });
-
-                    return tempDiv.innerHTML;
-                } catch (e) {
-                    console.error('Markdown parsing error:', e);
-                }
-            }
-
-            return fallbackParse(text);
-        };
-
-        /**
-         * Fallback parser when marked.js is not available
-         */
-        const fallbackParse = (text) => {
-            let html = text
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-
-            html = html
-                .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
-                .replace(/`([^`]+)`/g, '<code>$1</code>')
-                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
-                .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-                .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-                .replace(/^### (.+)$/gm, '<h4>$1</h4>')
-                .replace(/^## (.+)$/gm, '<h3>$1</h3>')
-                .replace(/^# (.+)$/gm, '<h2>$1</h2>')
-                .replace(/^\s*[-*]\s+(.+)$/gm, '<li>$1</li>')
-                .replace(/\n\n/g, '</p><p>')
-                .replace(/\n/g, '<br>');
-
-            return '<p>' + html + '</p>';
-        };
+        const parseMarkdown = (text, streaming = false) => MD.render(text, {streaming});
 
         /**
          * Escape HTML for safe text display
          */
-        const escapeHtml = (text) => {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+        const escapeHtml = (text) => MD.escapeHtml(text);
+
+        /**
+         * v-morph-html: like v-html, but patches the existing DOM instead of replacing it.
+         * Avoids flicker, keeps text selection and does not re-create unchanged nodes per token.
+         */
+        const morphHtmlDirective = {
+            mounted(el, binding) {
+                el.innerHTML = binding.value || '';
+            },
+            updated(el, binding) {
+                if (binding.value !== binding.oldValue) {
+                    MD.morph(el, binding.value || '');
+                }
+            }
         };
 
         /**
@@ -171,6 +107,8 @@ $labels = $this->labels;
 
                     // AbortController for cancelling requests
                     let abortController = null;
+                    // Increments per request; late updates of an older request are ignored
+                    let runCounter = 0;
 
                     // Computed
                     const charCount = computed(() => question.value.length);
@@ -196,12 +134,17 @@ $labels = $this->labels;
                         nextTick(() => scrollToBottom());
                     });
 
-                    // Watch messages for auto-scroll
-                    watch(messages, () => {
+                    // Auto-scroll on new messages (streamed content scrolls in flushRender)
+                    watch(() => messages.value.length, () => scrollIfPinned());
+
+                    /**
+                     * Scroll down unless the user deliberately scrolled up
+                     */
+                    const scrollIfPinned = () => {
                         if (!userScrolled.value) {
                             nextTick(() => scrollToBottom());
                         }
-                    }, {deep: true});
+                    };
 
                     /**
                      * Handle scroll detection
@@ -257,36 +200,40 @@ $labels = $this->labels;
                         const q = question.value.trim();
                         if (!q || isRunning.value) return;
 
+                        const runId = ++runCounter;
                         isRunning.value = true;
                         isLoading.value = true;  // Show loading immediately
                         errorMessage.value = '';
                         question.value = '';
+                        userScrolled.value = false;
                         nextTick(autoGrow);
 
                         // Add user message
-                        const userMsg = {
+                        messages.value.push({
                             id: 'user-' + Date.now(),
                             role: 'user',
                             name: labels.you,
                             content: escapeHtml(q),
                             rawContent: q,
                             sources: []
-                        };
-                        messages.value.push(userMsg);
+                        });
 
-                        // Add assistant placeholder
-                        const assistantMsg = {
+                        // Add assistant placeholder. IMPORTANT: keep working with the reactive proxy
+                        // from the array - mutating the plain object does not trigger any re-render.
+                        messages.value.push({
                             id: 'assistant-' + Date.now(),
                             role: 'assistant',
                             name: assistantName,
                             content: '',
                             rawContent: '',
                             sources: [],
-                            isStreaming: true
-                        };
-                        messages.value.push(assistantMsg);
+                            isStreaming: true,
+                            interrupted: false
+                        });
+                        const assistantMsg = messages.value[messages.value.length - 1];
 
                         abortController = new AbortController();
+                        const stream = createStreamRenderer(assistantMsg, runId);
 
                         try {
                             const response = await fetch(`/gen-ai/chat-component/ask-stream/${assistantId}`, {
@@ -302,83 +249,175 @@ $labels = $this->labels;
                                 signal: abortController.signal
                             });
 
-                            if (!response.ok) {
+                            if (!response.ok || !response.body) {
                                 throw new Error(`HTTP ${response.status}`);
                             }
 
-                            await processStream(response, assistantMsg);
+                            const result = await processStream(response, stream);
+
+                            if (result.error) {
+                                throw new Error(result.error);
+                            }
+                            if (!result.done) {
+                                // Connection closed without the final event
+                                throw new Error('Stream ended unexpectedly');
+                            }
 
                         } catch (error) {
+                            if (runId !== runCounter) return;   // chat was reset meanwhile
+
                             if (error.name === 'AbortError') {
-                                assistantMsg.rawContent += '\n\n[' + labels.cancelled + ']';
-                                assistantMsg.content = parseMarkdown(assistantMsg.rawContent);
+                                stream.finish(`\n\n*[${labels.cancelled}]*`);
                             } else {
                                 console.error('Chat error:', error);
                                 errorMessage.value = labels.error;
-                                // Remove failed assistant message
-                                const idx = messages.value.findIndex(m => m.id === assistantMsg.id);
-                                if (idx !== -1) messages.value.splice(idx, 1);
+
+                                if (stream.hasContent()) {
+                                    // Keep what was already received
+                                    assistantMsg.interrupted = true;
+                                    stream.finish();
+                                } else {
+                                    const idx = messages.value.indexOf(assistantMsg);
+                                    if (idx !== -1) messages.value.splice(idx, 1);
+                                }
                             }
                         } finally {
-                            assistantMsg.isStreaming = false;
-                            isRunning.value = false;
-                            isLoading.value = false;
-                            abortController = null;
+                            stream.finish();
+                            if (runId === runCounter) {
+                                isRunning.value = false;
+                                isLoading.value = false;
+                                abortController = null;
+                            }
                         }
                     };
 
                     /**
-                     * Process SSE stream
+                     * Renders the streamed text into the message: at most once per animation frame,
+                     * so a burst of tokens causes a single Markdown parse + DOM patch.
                      */
-                    const processStream = async (response, messageObj) => {
+                    const createStreamRenderer = (messageObj, runId) => {
+                        let raw = '';
+                        let pending = false;
+                        let finished = false;
+
+                        const flush = () => {
+                            pending = false;
+                            if (finished || runId !== runCounter) return;
+                            messageObj.rawContent = raw;
+                            messageObj.content = parseMarkdown(raw, true);
+                            scrollIfPinned();
+                        };
+
+                        const schedule = () => {
+                            if (pending) return;
+                            pending = true;
+                            // rAF pauses in background tabs -> timeout as fallback
+                            const run = () => { if (pending) flush(); };
+                            requestAnimationFrame(run);
+                            setTimeout(run, 150);
+                        };
+
+                        return {
+                            /** Full text so far (authoritative, avoids duplicated tokens) */
+                            setText(text) {
+                                if (finished || text === raw) return;
+                                raw = text;
+                                schedule();
+                            },
+                            appendText(token) {
+                                if (finished || !token) return;
+                                raw += token;
+                                schedule();
+                            },
+                            setSources(sources) {
+                                if (!finished && Array.isArray(sources)) messageObj.sources = sources;
+                            },
+                            hasContent: () => raw.trim() !== '',
+                            /** Final render without repair -> identical to a complete Markdown render */
+                            finish(suffix = '') {
+                                if (finished || runId !== runCounter) return;
+                                finished = true;
+                                pending = false;
+                                raw += suffix;
+                                messageObj.rawContent = raw;
+                                messageObj.content = parseMarkdown(raw, false);
+                                messageObj.isStreaming = false;
+                                scrollIfPinned();
+                            }
+                        };
+                    };
+
+                    /**
+                     * Read the SSE stream. Each event: "data: {json}\n\n".
+                     * Returns {done, error}.
+                     */
+                    const processStream = async (response, stream) => {
                         const reader = response.body.getReader();
                         const decoder = new TextDecoder();
                         let buffer = '';
-                        let content = '';
-                        let sources = [];
+                        let result = {done: false, error: null};
 
-                        while (true) {
+                        const handleEvent = (event) => {
+                            // Per SSE spec several data lines form one payload
+                            const data = event.split(/\r?\n/)
+                                .filter(line => line.startsWith('data:'))
+                                .map(line => line.slice(5).replace(/^ /, ''))
+                                .join('\n');
+                            if (!data) return;
+
+                            let payload;
+                            try {
+                                payload = JSON.parse(data);
+                            } catch (e) {
+                                console.warn('[GenAI] Invalid stream event skipped:', data.slice(0, 200));
+                                return;
+                            }
+
+                            if (payload.error) {
+                                result.error = payload.error;
+                                return;
+                            }
+
+                            if (payload.done) {
+                                // Final event: "content" is server-rendered HTML -> keep our raw Markdown
+                                result.done = true;
+                                stream.setSources(payload.sources);
+                                return;
+                            }
+
+                            if (typeof payload.content === 'string') {
+                                stream.setText(payload.content);
+                            } else if (payload.token) {
+                                stream.appendText(payload.token);
+                            }
+                            if (payload.sources) {
+                                stream.setSources(payload.sources);
+                            }
+                        };
+
+                        while (!result.done && !result.error) {
                             const {done, value} = await reader.read();
-                            if (done) break;
+                            if (done) {
+                                buffer += decoder.decode();
+                                if (buffer.trim()) handleEvent(buffer);
+                                break;
+                            }
 
                             buffer += decoder.decode(value, {stream: true});
-                            const events = buffer.split('\n\n');
+                            const events = buffer.split(/\r?\n\r?\n/);
                             buffer = events.pop() || '';
 
                             for (const event of events) {
-                                if (!event.trim()) continue;
-
-                                const match = event.match(/^data:\s*(.+)$/m);
-                                if (!match) continue;
-
-                                try {
-                                    const data = JSON.parse(match[1]);
-
-                                    if (data.error) {
-                                        throw new Error(data.error);
-                                    }
-
-                                    if (data.token) {
-                                        content += data.token;
-                                        messageObj.rawContent = content;
-                                        messageObj.content = parseMarkdown(content);
-                                        if (!userScrolled.value) {
-                                            nextTick(() => scrollToBottom());
-                                        }
-                                    }
-
-                                    if (data.sources) {
-                                        sources = data.sources;
-                                    }
-
-                                    if (data.done) {
-                                        messageObj.sources = sources;
-                                    }
-                                } catch (e) {
-                                    console.error('Parse error:', e);
-                                }
+                                handleEvent(event);
+                                if (result.done || result.error) break;
                             }
                         }
+
+                        if (result.done || result.error) {
+                            reader.cancel().catch(() => {});
+                        }
+
+                        return result;
                     };
 
                     /**
@@ -405,6 +444,12 @@ $labels = $this->labels;
                      * Reset chat
                      */
                     const reset = async () => {
+                        // Cancel a running answer; its late updates are ignored via runCounter
+                        stop();
+                        runCounter++;
+                        isRunning.value = false;
+                        isLoading.value = false;
+
                         // Keep only initial message
                         messages.value = messages.value.filter(m => m.isInitial);
 
@@ -447,9 +492,11 @@ $labels = $this->labels;
                         const lastUserMsg = [...messages.value].reverse().find(m => m.role === 'user');
                         if (lastUserMsg) {
                             question.value = lastUserMsg.rawContent;
-                            // Remove the failed response attempt
-                            const lastIdx = messages.value.length - 1;
-                            if (messages.value[lastIdx]?.role === 'user') {
+                            // Remove the failed response attempt (partial answer + its question)
+                            if (messages.value[messages.value.length - 1]?.interrupted) {
+                                messages.value.pop();
+                            }
+                            if (messages.value[messages.value.length - 1]?.role === 'user') {
                                 messages.value.pop();
                             }
                             send();
@@ -480,9 +527,7 @@ $labels = $this->labels;
                                 } else {
                                     // Assistant content is already HTML (MarkdownExtra on server)
                                     // Just sanitize for safety
-                                    displayContent = typeof DOMPurify !== 'undefined'
-                                        ? DOMPurify.sanitize(m.content)
-                                        : m.content;
+                                    displayContent = MD.sanitize(m.content);
                                 }
 
                                 messages.value.push({
@@ -541,7 +586,8 @@ $labels = $this->labels;
                     
                     <article v-for="msg in messages" 
                              :key="msg.id"
-                             :class="['genai-chat__message', 'genai-chat__message--' + msg.role]"
+                             :class="['genai-chat__message', 'genai-chat__message--' + msg.role, {'genai-chat__message--streaming': msg.isStreaming, 'genai-chat__message--interrupted': msg.interrupted}]"
+                             :aria-busy="msg.isStreaming ? 'true' : 'false'"
                              :data-role="msg.role">
                         <div class="genai-chat__message-header">
                             <span class="genai-chat__message-name">[[ msg.name ]]</span>
@@ -561,7 +607,7 @@ $labels = $this->labels;
                             <div v-if="msg.isStreaming && !msg.content" class="genai-chat__typing">
                                 <span></span><span></span><span></span>
                             </div>
-                            <div v-else v-html="msg.content"></div>
+                            <div v-else class="genai-chat__markdown" v-morph-html="msg.content"></div>
                         </div>
                         <div v-if="msg.sources && msg.sources.length" class="genai-chat__message-sources">
                             <details>
@@ -677,6 +723,7 @@ $labels = $this->labels;
                 if (!mountPoint) return;
 
                 const app = createApp(createChatApp(config));
+                app.directive('morph-html', morphHtmlDirective);
                 // Use [[ ]] instead of {{ }} to avoid Contao insert tag parsing
                 app.config.compilerOptions.delimiters = ['[[', ']]'];
                 app.mount(mountPoint);

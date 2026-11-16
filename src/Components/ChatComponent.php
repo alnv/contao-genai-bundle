@@ -44,9 +44,6 @@ class ChatComponent
         return $objTemplate->parse();
     }
 
-    /**
-     * Build labels array with custom values or fallbacks
-     */
     protected function buildLabels(): array
     {
         $lang = $GLOBALS['TL_LANG']['genai'] ?? [];
@@ -71,14 +68,13 @@ class ChatComponent
 
     protected function setResources(): void
     {
-        // CSS
         $objCombiner = new Combiner();
         $objCombiner->add('/bundles/alnvgenai/scss/chat-component.scss');
         $GLOBALS['TL_HEAD']['genai-chat-css'] = '<link href="' . $objCombiner->getCombinedFile() . '" rel="stylesheet">';
 
-        // JavaScript (Vue 3, marked.js, DOMPurify)
         $GLOBALS['TL_HEAD']['genai-vue'] = '<script src="/bundles/alnvgenai/js/vue.global.prod.js"></script>';
         $GLOBALS['TL_HEAD']['genai-marked'] = '<script src="/bundles/alnvgenai/js/marked.js"></script>';
         $GLOBALS['TL_HEAD']['genai-dompurify'] = '<script src="/bundles/alnvgenai/js/dompurify.min.js"></script>';
+        $GLOBALS['TL_HEAD']['genai-markdown'] = '<script src="/bundles/alnvgenai/js/genai-markdown.js?v=' . \filemtime(__DIR__ . '/../Resources/public/js/genai-markdown.js') . '"></script>';
     }
 }
