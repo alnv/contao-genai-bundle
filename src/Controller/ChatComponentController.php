@@ -24,6 +24,19 @@ class ChatComponentController extends AbstractController
         private readonly ?LoggerInterface $logger = null
     ) {
     }
+    
+    #[Route(path: '/token', methods: ['GET'])]
+    public function getRequestToken(): JsonResponse
+    {
+        $response = new JsonResponse([
+            'requestToken' => $this->container->get('contao.csrf.token_manager')->getDefaultTokenValue(),
+        ]);
+
+        $response->setPrivate();
+        $response->headers->addCacheControlDirective('no-store');
+
+        return $response;
+    }
 
     #[Route(path: '/ask/{assistantId}', methods: ['POST'])]
     public function askChatAssistantId(Request $request, $assistantId): JsonResponse
@@ -47,6 +60,8 @@ class ChatComponentController extends AbstractController
     #[Route(path: '/ask-stream/{assistantId}', methods: ['POST'])]
     public function askStreamChatAssistantId(Request $request, $assistantId): Response
     {
+        $this->container->get('contao.framework')->initialize();
+
         $startTime = \microtime(true);
 
         $strQuestion = $this->getAndValidateQuestion($request);
@@ -59,8 +74,6 @@ class ChatComponentController extends AbstractController
         if ($session->isStarted()) {
             $session->save();
         }
-
-        $this->container->get('contao.framework')->initialize();
 
         try {
             $assistant = new Assistant($assistantId);
@@ -229,10 +242,7 @@ class ChatComponentController extends AbstractController
             return $this->errorResponse('Zurücksetzen fehlgeschlagen.');
         }
     }
-
-    /**
-     * Get and validate question from request
-     */
+    
     private function getAndValidateQuestion(Request $request): string|JsonResponse
     {
         $data = json_decode($request->getContent(), true);
@@ -259,17 +269,11 @@ class ChatComponentController extends AbstractController
         return preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $question);
     }
 
-    /**
-     * Create JSON error response
-     */
     private function errorResponse(string $message, int $status = Response::HTTP_INTERNAL_SERVER_ERROR): JsonResponse
     {
         return new JsonResponse(['error' => $message], $status);
     }
 
-    /**
-     * Create SSE error response
-     */
     private function sseErrorResponse(string $message): StreamedResponse
     {
         $response = new StreamedResponse(function () use ($message) {
@@ -283,12 +287,6 @@ class ChatComponentController extends AbstractController
         return $response;
     }
 
-    /**
-     * Parse OpenAI SSE chunk
-     * Format: "data: {...}" or "data: [DONE]"
-     * 
-     * @return string|null Content token, '[DONE]' for end, or null to skip
-     */
     private function parseOpenAIChunk(string $line): ?string
     {
         // Must start with "data: "
@@ -313,12 +311,6 @@ class ChatComponentController extends AbstractController
         return $json['choices'][0]['delta']['content'] ?? null;
     }
 
-    /**
-     * Parse Ollama streaming chunk
-     * Format: {"message": {"role": "assistant", "content": "..."}, "done": false}
-     * 
-     * @return string|null Content token, '[DONE]' for end, or null to skip
-     */
     private function parseOllamaChunk(string $line): ?string
     {
         try {
@@ -345,26 +337,17 @@ class ChatComponentController extends AbstractController
         return $message['content'] ?? null;
     }
 
-    /**
-     * Send SSE event
-     */
     private function sendSSE(array $data): void
     {
         echo 'data: ' . \json_encode($data, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n\n";
         \flush();
     }
 
-    /**
-     * Log timing metric
-     */
     private function logTiming(string $metric, float $seconds): void
     {
         $this->logger?->debug(\sprintf('[GenAI] %s: %.3fs', $metric, $seconds));
     }
 
-    /**
-     * Log error (without exposing details to frontend)
-     */
     private function logError(string $context, \Exception $e): void
     {
         $this->logger?->error(\sprintf(

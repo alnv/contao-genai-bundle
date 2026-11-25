@@ -1,18 +1,4 @@
 <?php
-/**
- * GenAI Chat Component Template - Vue 3 Implementation
- *
- * Features:
- * - Vue 3 Composition API via CDN
- * - SSE streaming, rendered live while tokens arrive (batched per animation frame)
- * - Streaming-safe Markdown rendering via genai-markdown.js (marked.js + DOMPurify)
- * - Auto-scroll with user detection
- * - Server-side conversation history (tl_genai_conversations)
- * - Multiple instances support
- * - Accessibility (aria-live, keyboard navigation)
- * - Dark mode support
- */
-
 $widgetId = $this->templateId;
 $assistantId = $this->assistantId;
 $assistantName = $this->assistant['assistantName'] ?? 'Assistent';
@@ -44,7 +30,6 @@ $labels = $this->labels;
         </header>
     <?php endif; ?>
 
-    <!-- Vue App Mount Point -->
     <div class="genai-chat__vue-app"></div>
 </div>
 
@@ -54,21 +39,10 @@ $labels = $this->labels;
         const {createApp, ref, computed, onMounted, nextTick, watch} = Vue;
         const MD = window.GenAIMarkdown;
 
-        /**
-         * Markdown -> sanitized HTML. streaming=true repairs unfinished Markdown (open code fences,
-         * emphasis, half-typed links/tables); the final render uses the unmodified text.
-         */
         const parseMarkdown = (text, streaming = false) => MD.render(text, {streaming});
 
-        /**
-         * Escape HTML for safe text display
-         */
         const escapeHtml = (text) => MD.escapeHtml(text);
 
-        /**
-         * v-morph-html: like v-html, but patches the existing DOM instead of replacing it.
-         * Avoids flicker, keeps text selection and does not re-create unchanged nodes per token.
-         */
         const morphHtmlDirective = {
             mounted(el, binding) {
                 el.innerHTML = binding.value || '';
@@ -80,15 +54,29 @@ $labels = $this->labels;
             }
         };
 
-        /**
-         * GenAI Chat Vue Component
-         */
         const createChatApp = (config) => {
             return {
                 setup() {
                     // Config
                     const assistantId = config.assistantId;
-                    const requestToken = config.requestToken;
+                    const fallbackToken = config.requestToken;
+                    const getRequestToken = async () => {
+                        try {
+                            const response = await fetch('/gen-ai/chat-component/token', {
+                                method: 'GET',
+                                headers: {'Accept': 'application/json'},
+                                cache: 'no-store',
+                                credentials: 'same-origin'
+                            });
+                            if (response.ok) {
+                                const data = await response.json();
+                                if (data.requestToken) return data.requestToken;
+                            }
+                        } catch (e) {
+                            console.error('Token fetch failed:', e);
+                        }
+                        return fallbackToken;
+                    };
                     const assistantName = config.assistantName;
                     const labels = config.labels;
 
@@ -137,27 +125,16 @@ $labels = $this->labels;
                     // Auto-scroll on new messages (streamed content scrolls in flushRender)
                     watch(() => messages.value.length, () => scrollIfPinned());
 
-                    /**
-                     * Scroll down unless the user deliberately scrolled up
-                     */
                     const scrollIfPinned = () => {
                         if (!userScrolled.value) {
                             nextTick(() => scrollToBottom());
                         }
                     };
-
-                    /**
-                     * Handle scroll detection
-                     */
                     const handleScroll = () => {
                         if (!messagesEl.value) return;
                         const {scrollTop, scrollHeight, clientHeight} = messagesEl.value;
                         userScrolled.value = scrollHeight - scrollTop - clientHeight > 100;
                     };
-
-                    /**
-                     * Scroll to bottom
-                     */
                     const scrollToBottom = (smooth = false) => {
                         if (!messagesEl.value) return;
                         messagesEl.value.scrollTo({
@@ -165,37 +142,21 @@ $labels = $this->labels;
                             behavior: smooth ? 'smooth' : 'auto'
                         });
                     };
-
-                    /**
-                     * Click scroll button
-                     */
                     const clickScrollBtn = () => {
                         scrollToBottom(true);
                         userScrolled.value = false;
                     };
-
-                    /**
-                     * Auto-grow textarea
-                     */
                     const autoGrow = () => {
                         if (!inputEl.value) return;
                         inputEl.value.style.height = 'auto';
                         inputEl.value.style.height = Math.min(inputEl.value.scrollHeight, 200) + 'px';
                     };
-
-                    /**
-                     * Handle keydown
-                     */
                     const handleKeydown = (e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault();
                             if (canSend.value) send();
                         }
                     };
-
-                    /**
-                     * Send message
-                     */
                     const send = async () => {
                         const q = question.value.trim();
                         if (!q || isRunning.value) return;
@@ -244,7 +205,7 @@ $labels = $this->labels;
                                 },
                                 body: new URLSearchParams({
                                     question: q,
-                                    REQUEST_TOKEN: requestToken
+                                    REQUEST_TOKEN: await getRequestToken()
                                 }),
                                 signal: abortController.signal
                             });
@@ -290,11 +251,6 @@ $labels = $this->labels;
                             }
                         }
                     };
-
-                    /**
-                     * Renders the streamed text into the message: at most once per animation frame,
-                     * so a burst of tokens causes a single Markdown parse + DOM patch.
-                     */
                     const createStreamRenderer = (messageObj, runId) => {
                         let raw = '';
                         let pending = false;
@@ -346,11 +302,6 @@ $labels = $this->labels;
                             }
                         };
                     };
-
-                    /**
-                     * Read the SSE stream. Each event: "data: {json}\n\n".
-                     * Returns {done, error}.
-                     */
                     const processStream = async (response, stream) => {
                         const reader = response.body.getReader();
                         const decoder = new TextDecoder();
@@ -419,19 +370,11 @@ $labels = $this->labels;
 
                         return result;
                     };
-
-                    /**
-                     * Stop streaming
-                     */
                     const stop = () => {
                         if (abortController) {
                             abortController.abort();
                         }
                     };
-
-                    /**
-                     * Handle form submit
-                     */
                     const handleSubmit = () => {
                         if (isRunning.value) {
                             stop();
@@ -439,10 +382,6 @@ $labels = $this->labels;
                             send();
                         }
                     };
-
-                    /**
-                     * Reset chat
-                     */
                     const reset = async () => {
                         // Cancel a running answer; its late updates are ignored via runCounter
                         stop();
@@ -458,7 +397,7 @@ $labels = $this->labels;
                             await fetch(`/gen-ai/chat-component/conversation/${assistantId}/reset`, {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                                body: new URLSearchParams({REQUEST_TOKEN: requestToken})
+                                body: new URLSearchParams({REQUEST_TOKEN: await getRequestToken()})
                             });
                         } catch (e) {
                             console.error('Reset failed:', e);
@@ -467,10 +406,6 @@ $labels = $this->labels;
                         errorMessage.value = '';
                         nextTick(() => inputEl.value?.focus());
                     };
-
-                    /**
-                     * Copy message content
-                     */
                     const copyMessage = async (message) => {
                         try {
                             await navigator.clipboard.writeText(message.rawContent);
@@ -482,10 +417,6 @@ $labels = $this->labels;
                             console.error('Copy failed:', e);
                         }
                     };
-
-                    /**
-                     * Retry last question
-                     */
                     const retry = () => {
                         errorMessage.value = '';
                         // Find last user message and resend
@@ -502,16 +433,12 @@ $labels = $this->labels;
                             send();
                         }
                     };
-
-                    /**
-                     * Load conversation history from server
-                     */
                     const loadConversation = async () => {
                         try {
                             const response = await fetch(`/gen-ai/chat-component/conversation/${assistantId}`, {
                                 method: 'POST',
                                 headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                                body: new URLSearchParams({REQUEST_TOKEN: requestToken})
+                                body: new URLSearchParams({REQUEST_TOKEN: await getRequestToken()})
                             });
 
                             if (!response.ok) return;
@@ -701,10 +628,6 @@ $labels = $this->labels;
 
                 };
             };
-
-            /**
-             * Initialize Vue app for this container
-             */
             const initChat = (container) => {
                 if (container._vueApp) return;
 

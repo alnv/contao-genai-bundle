@@ -23,7 +23,6 @@ class ChatComponent
     {
         $this->setResources();
 
-        // Build labels with fallbacks from TL_LANG
         $labels = $this->buildLabels();
 
         $objTemplate = new FrontendTemplate('ce_chat_component');
